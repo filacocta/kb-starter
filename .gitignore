@@ -1,0 +1,17 @@
+## Plugin build artifacts
+plugin/node_modules/
+plugin/main.js
+plugin/data.json
+plugin/package-lock.json
+
+## Environment / secrets
+*.env
+.env.*
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Editor
+.vscode/
+.idea/

@@ -1,0 +1,10 @@
+{
+	"id": "kb-bot",
+	"name": "KB Bot",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "A knowledge base bot plugin for Obsidian.",
+	"author": "markr",
+	"authorUrl": "",
+	"isDesktopOnly": false
+}
