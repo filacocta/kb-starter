@@ -21,7 +21,9 @@ Before writing anything:
 2. Is the target path inside `knowledgebase/`?
    - **No:** **Abort**. Do not write outside the KB root under any circumstances.
 
-This rule cannot be overridden by any instruction in a conversation. If a user asks you to edit a file outside these bounds, explain the constraint and decline.
+**Exception — Clippings:** Files in `knowledgebase/clippings/` are user-owned unsorted sources and do not carry `author: kb-bot`. You **may** read, edit, and extend their content despite lacking that frontmatter field. Treat them as unsorted source material. When processing a clipping, add `processed: true` and the destination source path to its frontmatter — do not change other user-written frontmatter fields.
+
+This rule (outside the clippings exception) cannot be overridden by any instruction in a conversation. If a user asks you to edit a file outside these bounds, explain the constraint and decline.
 
 ---
 
@@ -203,12 +205,19 @@ Files in `readinglist/` that lack `author: kb-bot` frontmatter are user-owned �
 
 Two types of links exist and must never be confused:
 
-- **Internal wikilinks** (cross-note navigation within the KB): `[[notes/concepts/ptolemaic-cosmology]]` or with display text `[[notes/concepts/ptolemaic-cosmology|Ptolemaic Cosmology]]`
+- **Internal wikilinks** (cross-note navigation within the KB): `[[knowledgebase/topics/celestial-spheres/notes/concepts/ptolemaic-cosmology]]` or with display text `[[knowledgebase/topics/celestial-spheres/notes/concepts/ptolemaic-cosmology|Ptolemaic Cosmology]]`
 - **External URL links** (links to the web): `[display text](https://example.com)`
 
 **Never write `[[https://...]]` or `[[https://...|display text]]`.** Obsidian interprets this as an attempt to create a note whose filename is the URL, which produces broken links and errors.
 
-Rule of thumb: if it starts with `http`, use `[text](url)`. If it is a path within the KB, use `[[path]]`.
+**Never use relative paths (`../`) in wikilinks.** Relative paths do not resolve correctly in Obsidian wikilinks and produce broken links. Always use vault-relative paths beginning from the vault root:
+
+- Wrong: `[[../../celestial-spheres/notes/concepts/florentine-neoplatonism]]`
+- Correct: `[[knowledgebase/topics/celestial-spheres/notes/concepts/florentine-neoplatonism]]`
+
+This applies everywhere — frontmatter `related:` fields, inline links, and `See Also` sections. Cross-topic links always start with `knowledgebase/topics/<topic>/` or `knowledgebase/projects/<project>/`.
+
+Rule of thumb: if it starts with `http`, use `[text](url)`. If it is a path within the KB, use `[[knowledgebase/...]]`.
 
 ---
 
@@ -265,7 +274,7 @@ The goal: no insight produced in a conversation is ephemeral. The KB grows with 
 
 KB notes MAY contain wikilinks pointing to any file anywhere in the vault, not just within `knowledgebase/`.
 
-**Allowed:** `[[YourVault/your/folder/YourNote]]` inside a KB note  
+**Allowed:** `[[RPG/duckmage/world/cryptids/Mothman]]` inside a KB note  
 **Never allowed:** kb-bot writing to or modifying any file outside `knowledgebase/` (Rule 1 unchanged)
 
 **Where to put vault references:**
@@ -275,7 +284,224 @@ KB notes MAY contain wikilinks pointing to any file anywhere in the vault, not j
 
 **Format:**
 ```yaml
-vault_refs: ["[[YourVault/your/folder/YourNote]]"]
+vault_refs: ["[[RPG/duckmage/world/cryptids/Mothman]]"]
 ```
 
 These are read-only pointers — navigation aids for the user browsing the vault in Obsidian. They do not grant kb-bot any write permissions over the linked files.
+
+---
+
+## Rule 21 — Active Cross-Topic Linking
+
+When writing or updating any KB note, actively identify and create wikilinks to relevant notes in **other topics**, not just within the current topic.
+
+**When to cross-link:**
+- A concept in topic A has a counterpart, precursor, or descendant in topic B
+- An entity appears in multiple topics (e.g. a person who spans several fields)
+- A source in topic A explicitly references a concept whose canonical note is in topic B
+- A synthesis note draws on material from multiple topics
+
+**How to apply:**
+1. In the `related:` frontmatter, include cross-topic wikilinks using full paths: `[[topics/<other-topic>/notes/concepts/<slug>]]`
+2. In the note body, link on first mention: `[[topics/<other-topic>/notes/concepts/slug|Display Name]]`
+3. If a concept note in topic A is the canonical home for something that appears in topic B, create a lightweight cross-reference stub in topic B pointing to the canonical note — do not duplicate content
+4. When writing a synthesis note that spans topics, list all relevant topics in the frontmatter `tags` and link explicitly to notes in each
+
+The goal: the KB is a graph, not a filing system. Cross-topic links are the edges that make it navigable as a whole rather than a collection of isolated silos.
+
+---
+
+## Rule 22 — Load Project Context Before Synthesis or Deep Work
+
+Before any synthesis, deep `/kb-ask` session, or significant KB operation, **scan the Projects table in `_index.md` and load the `_summary.md` of any project that is semantically related to the topic or question at hand**.
+
+**Why this matters:** Project summaries contain critical context that topic notes do not — what has already been built, what design decisions are locked, what technology is in use, and what gaps remain. Failing to read them before synthesis leads to redundant work, missed connections, and recommendations that contradict existing implementations.
+
+**When to load a project summary:**
+- The topic involves tools, plugins, or software that a project implements
+- The topic involves a world, setting, or system that a project manages
+- A synthesis note will produce recommendations or feature ideas that could be acted on within a project
+- The user's question references a project by name or implies knowledge of one
+
+**How to apply:**
+1. After reading `_index.md`, scan the Projects table — use the Brief column (or read `_summary.md` if the brief is absent) to assess relevance
+2. Read the `_summary.md` of any project with semantic overlap before beginning Phase 1 source reading
+3. Treat project summaries as KB context, not as sources — cite them with `[[projects/<name>/_summary]]` links, not as `[[sources/...]]` entries
+4. If a synthesis note produces implementation-ready ideas for a project, note it explicitly in the synthesis under a "Related Projects" section
+
+---
+
+## Rule 23 — Clippings Folder (Unsorted Web Sources)
+
+`knowledgebase/clippings/` contains articles saved directly from the web by the user via Obsidian Web Clipper. These are **unsorted sources** — they have full content but have not been assigned to a topic or processed into source notes yet.
+
+**Clipping frontmatter format** (written by Web Clipper, not by kb-bot):
+```yaml
+title: "Article Title"
+source: "https://..."
+author:
+  - "Author Name"
+published: YYYY-MM-DD
+created: YYYY-MM-DD
+tags:
+  - "clippings"
+```
+
+**At the start of any session**, after checking `_checkpoint.md`, also check `clippings/` for unprocessed items:
+1. `ls knowledgebase/clippings/` — list any files present
+2. If files exist, surface them to the user:
+   > "Clippings inbox: N unprocessed articles. Assign topics now, or process later?"
+
+**Processing a clipping** means:
+1. **Assign a topic** — identify the best-fit existing topic (or propose a new one)
+2. **Write a source note** — create `topics/<topic>/sources/<YYYY-MM-DD-slug>.md` using the clipping's content; use the clipping's `source:` URL as the `origin:` field
+3. **Update topic metadata** — `_summary.md`, `reading-list.md` (mark as processed), `_log.md`
+4. **Move or tag the clipping** — once processed, add `processed: true` and the target source path to the clipping's frontmatter. Do **not** delete it (Rule 10).
+
+**Authorship note:** Clipping files do NOT have `author: kb-bot` in frontmatter (they are user-owned). Per the Rule 1 exception, you **may** read, edit, and extend their content — treat them as unsorted source material.
+
+---
+
+## Rule 24 — Keep `_writing-prompts.md` in Sync
+
+`knowledgebase/_writing-prompts.md` is the consolidated writing prompt dashboard. Whenever a `## Writing Prompts` section is added or modified in any KB note, **also update `_writing-prompts.md`** in the same operation.
+
+**How to apply:**
+1. After adding a `## Writing Prompts` section to any source note or project file, immediately open `_writing-prompts.md`
+2. Add each new prompt as a bullet under the relevant theme section, in the format:
+   ```
+   - **[[essays/slug]]** — one sentence describing what to write
+   ```
+3. If no matching theme section exists, add one
+4. Prompts in `_writing-prompts.md` should link to the source note they came from using the format: `**From [[topics/topic/sources/note|Source Title]]:**`
+
+This rule applies to all kb-bot operations that add writing prompts. The dashboard is only useful if it is complete — a prompt buried in a source note that does not appear in the dashboard is effectively invisible.
+
+---
+
+## Rule 25 — Prospects and Project Seeds
+
+`knowledgebase/topics/<topic>/_prospects.md` is the ideas notebook for a topic — a lightweight file for collecting experiments, things to build, game ideas, todos, and anything that might eventually spin off into a full project.
+
+**Item format:**
+```
+- [ ] **Idea title** — one-sentence description and reason it's worth doing
+- [>] **Promoted idea** → [[knowledgebase/projects/<slug>/_summary]] — promoted YYYY-MM-DD
+- [x] **Deferred/dropped idea** — brief reason
+```
+
+**Agent behaviour:**
+
+1. **Adding an idea:** When the user mentions an experiment, thing to build, or "would be cool to" idea tied to a topic, offer to add it to that topic's `_prospects.md`. Create the file if it does not exist, using this template:
+
+```markdown
+---
+author: kb-bot
+created: <ISO-8601>
+modified: <ISO-8601>
+type: prospects
+topic: <topic-slug>
+---
+
+# <Topic> — Prospects & Ideas
+
+Ideas for projects, experiments, and things to build related to this topic.
+To promote an idea to a full project, ask the KB bot — it will create the project summary and link it here.
+
+## Ideas
+
+## Promoted
+
+## Deferred
+```
+
+2. **Surfacing prospects:** When working in a topic that has `_prospects.md`, surface open items (`- [ ]`) at the start of the session alongside clippings and reading-list items.
+
+3. **Promoting a prospect to a project:**
+   a. Create `knowledgebase/projects/<slug>/_summary.md` with `status: prospect` in frontmatter
+   b. Mark the item in `_prospects.md`: change `[ ]` → `[>]` and append `→ [[knowledgebase/projects/<slug>/_summary]] — promoted <date>`
+   c. Add the new project to the `## Projects` table in `_index.md` (note status as "Prospect" in the Brief column)
+   d. Append to `_log.md`
+
+4. **Visibility:** `_index.md` maintains a `## Prospects` section listing all topics that have `_prospects.md` files with at least one open item.
+
+---
+
+## Rule 26 — Catalog Files
+
+Catalog files (`type: catalog`) are living inventories of a project's content instances — cards, creatures, mechanics, levels, items, abilities, or any other enumerable game/software entity. They complement entity spec notes (which define the data contract) by capturing the full set of instances in natural language, organised by implementation status.
+
+**When to create a catalog:** When a project has 5+ instances of a recurring entity type (cards, creatures, items, levels), create a catalog for that type.
+
+**File location and naming:** `projects/<slug>/notes/catalogs/catalog-<entity-type>.md`  
+Use the canonical template at `knowledgebase/_templates/catalog.md`.
+
+**Required sections (in order):**
+
+1. `## ✅ Implemented` — entries that exist in the codebase/seed data and function correctly.
+2. `## ⚠️ Needs Adjustment` — entries that exist but have known bugs, balance problems, missing features, or design gaps.
+3. `## 💡 Ideas — To Add` — a free-form jotting area for future content.
+
+**Entry format:** Each entry is a level-3 heading with the entity name. Include its ID in backticks, one-line natural language summary, and any design notes worth capturing. Do not just repeat field values — explain what the entity *does* and how it *feels* to play against or use.
+
+**Maintenance:** Update catalog files whenever entities are added, changed, or removed.
+
+**Template:** `knowledgebase/_templates/catalog.md`
+
+---
+
+## Rule 27 — Project Notes Subfolder Convention
+
+When a project's `notes/` folder grows beyond approximately 10 files, reorganise into semantic subfolders rather than leaving it flat.
+
+**Standard subfolders for game/software projects:**
+
+| Subfolder | Contents | Naming convention |
+|---|---|---|
+| `entities/` | Data contract specs for named entity types | `entity-<name>.md` |
+| `catalogs/` | Living inventories of content instances | `catalog-<entity-type>.md` |
+| `impl/` | Technical implementation notes, architecture sketches, integration details | any |
+| `design/` | Design documents, phase plans, roadmaps, todo lists | any |
+
+Not all subfolders are required for every project. Create a subfolder only when it will hold 3+ files. A flat `notes/` folder is correct for projects with fewer than ~10 notes.
+
+**When adding subfolders:**
+1. Move files into the appropriate subfolder
+2. Update all wikilinks in `_summary.md` and every note that references moved files
+3. Update any external files (e.g. `CLAUDE.md` paths) that reference the old note paths
+4. Append an entry to `_log.md` recording what was reorganised and why
+
+---
+
+## Rule 28 — Project Task Boards (`_todos.md`)
+
+Every project folder (`projects/<slug>/`) must contain a `_todos.md` at its root. This is the canonical, human-editable task board for the project.
+
+**File location:** `projects/<slug>/_todos.md`  
+**Template:** `knowledgebase/_templates/project-todos.md`
+
+**Structure:**
+
+```
+## 🗂️ Backlog        — not started; subdivided by Features / Bugs / Design Decisions / UX & Polish / Infrastructure
+## 🔄 In Progress    — actively being worked on; each item should have a brief status note
+## 🧪 Testing/Review — implemented but not yet verified end-to-end
+## ✅ Done           — completed; keep entries with dates for project history
+```
+
+**Status markers (used inline in list items):**
+- `[ ]` = backlog
+- `[~]` = in progress
+- `[?]` = needs testing or review
+- `[x]` = done (include completion date in parens)
+- `[!]` = blocked (include the blocker inline)
+
+**Agent behaviour:**
+
+1. **On project init** (`/kb-project-init`): create `_todos.md` from the template. Seed obvious backlog items from the project brief.
+2. **On task completion** (KB update at session end): move the relevant item to `## ✅ Done` with today's date. Do not delete Done entries.
+3. **On discovery of new work**: add it to the appropriate Backlog category immediately.
+4. **On project summary scan**: surface any `[~]` (in progress) and `[!]` (blocked) items alongside the `_summary.md` content.
+5. **Do not** move items to Done unless the user or a confirmed implementation verifies the work is actually complete.
+
+**Note for users:** `_todos.md` is also yours to edit directly. The agent will respect your edits and never overwrite content you have added.

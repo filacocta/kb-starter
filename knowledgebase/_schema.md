@@ -34,6 +34,7 @@ This KB is **LLM-agnostic**. All conventions are plain English. No model-specifi
 ```
 knowledgebase/
   _schema.md          ← this file; the contract for all agents
+  _templates/         ← reusable file templates for catalog, summary, etc. (see Rule 26)
   _index.md           ← navigation map listing all topics and projects
   _rules.md           ← behavioural rules for agents operating in this KB
   _checkpoint.md      ← written during long operations; used for resume after interruption
@@ -47,6 +48,7 @@ knowledgebase/
     <topic-slug>/
       _summary.md     ← compressed overview of this topic (read this first)
       _discussion.md  ← append-only log of corrections and conversations
+      _prospects.md   ← optional; project ideas, todos, and experiment seeds for this topic
       sources/        ← one note per ingested source; immutable after initial write
       notes/
         concepts/     ← one article per concept
@@ -56,6 +58,7 @@ knowledgebase/
   projects/
     <project-slug>/
       _summary.md     ← two sections: LLM orientation + user research direction
+      _todos.md       ← kanban task board; human + agent editable (see Rule 28)
       notes/
 ```
 
@@ -99,6 +102,9 @@ origin: ""        # source notes only: original URL or file path
 | `output` | Filed answer to a user query |
 | `summary` | A `_summary.md` folder overview |
 | `index` | `_index.md` |
+| `prospects` | `_prospects.md` per topic — ideas, todos, experiment seeds, and project promotion records |
+| `catalog` | Living inventory of a project's instances (cards, creatures, mechanics, levels, etc.) — tracks what's implemented, what needs work, and what's on the wishlist. Named `catalog-<entity-type>.md` in `projects/<slug>/notes/`. See Rule 26. |
+| `todos` | Kanban task board for a project (`_todos.md` at the project root). Four sections: Backlog, In Progress, Testing/Review, Done. Status markers: `[ ]` `[~]` `[?]` `[x]` `[!]`. See Rule 28 and template at `_templates/project-todos.md`. |
 | `meta` | `_schema.md`, `_rules.md`, `_checkpoint.md`, `_log.md`, `_discussion.md`, `reading-list.md`, `_dive-queue.md` |
 
 ---
@@ -140,10 +146,16 @@ All cross-references use Obsidian wikilinks:
 
 | Link type | Format | When to use |
 |---|---|---|
-| Source citation | `[[sources/2026-04-09-some-article]]` | Citing the origin of a claim |
-| Concept link | `[[notes/concepts/concept-slug]]` | Linking to a concept note in the same topic |
-| Entity link | `[[notes/entities/entity-slug]]` | Linking to an entity note |
-| Cross-topic link | `[[topics/other-topic/notes/concepts/concept]]` | Canonical concept in another topic |
+| Source citation | `[[knowledgebase/topics/<topic>/sources/2026-04-09-some-article]]` | Citing the origin of a claim |
+| Concept link (same topic) | `[[knowledgebase/topics/<topic>/notes/concepts/concept-slug]]` | Linking to a concept note in the same topic |
+| Entity link (same topic) | `[[knowledgebase/topics/<topic>/notes/entities/entity-slug]]` | Linking to an entity note |
+| Cross-topic link | `[[knowledgebase/topics/other-topic/notes/concepts/concept]]` | Canonical concept in another topic |
+| Cross-project link | `[[knowledgebase/projects/project-name/_summary]]` | Reference to a project |
+
+**All wikilink paths must be vault-relative** — they start from the vault root (`knowledgebase/...`). Never use relative paths with `../`. Relative paths do not resolve correctly in Obsidian wikilinks and produce broken links.
+
+- Wrong: `[[../../celestial-spheres/notes/concepts/florentine-neoplatonism]]`
+- Correct: `[[knowledgebase/topics/celestial-spheres/notes/concepts/florentine-neoplatonism]]`
 
 **Rules:**
 - Every factual claim in a wiki note must have at least one source citation

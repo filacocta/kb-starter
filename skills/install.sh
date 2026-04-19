@@ -7,7 +7,7 @@ CLAUDE_DIR="$HOME/.claude"
 
 echo "Installing KB skills to $CLAUDE_DIR/skills/"
 
-for skill in kb-ask kb-ingest kb-queue kb-synthesise kb-lint kb-auto; do
+for skill in kb-ask kb-ingest kb-queue kb-synthesise kb-lint kb-auto kb-scan kb-wrap kb-project-init; do
   mkdir -p "$CLAUDE_DIR/skills/$skill"
   cp "$SKILLS_DIR/$skill/SKILL.md" "$CLAUDE_DIR/skills/$skill/SKILL.md"
   echo "  ✓ $skill"
