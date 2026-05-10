@@ -1,0 +1,144 @@
+# kb-relink curated alias dictionary
+#
+# Maps an anchor slug (the .md filename without extension) to the list of prose
+# phrases that should be linked to it. The skill auto-derives phrases from the
+# slug + title + frontmatter aliases; this file adds the common-noun / branded /
+# alternate-spelling forms the heuristic can't infer.
+#
+# Format:
+#   <anchor-slug>:
+#     - "Phrase 1"
+#     - "Phrase 2"
+#
+# Conventions:
+#   - List phrases LONGEST FIRST so the matcher prefers more specific matches.
+#   - Use exact casing as it appears in prose (PyAV, not pyav, when proper-noun).
+#   - Add plurals/possessives explicitly if you want them matched (e.g., "PyAV's").
+#   - To disambiguate: if a phrase could resolve to two anchors, keep it on only
+#     one side and remove from the other. The skill warns on collisions.
+#
+# Hard-skip phrases (never link these no matter what) live in SKILL.md Step 3,
+# not here.
+
+# ---- projects ---------------------------------------------------------------
+# Slug-to-prose mappings where the display name differs from the hyphenated slug
+# or where the project is referred to by a short-form / branded name.
+
+sportsbook-automation:
+  - "Unabated automation"
+  - "EV betting app"
+  - "sportsbook automation"
+  - "betting automation"
+
+tcg-automation:
+  - "TCGPlayer automation"
+  - "TCG automation"
+  - "TCGPlayer tooling"
+
+llm-orchestrator:
+  - "multi-model orchestrator"
+  - "LLM orchestrator"
+  - "agent orchestrator"
+
+marketingbot:
+  - "MarketingBot"
+  - "marketing bot"
+
+duckmage-world:
+  - "the Reaches"
+  - "Duckmage World"
+  - "duckmage world"
+
+duckmage-plugin:
+  - "Duckmage plugin"
+  - "duckmage plugin"
+  - "HexMapView"
+
+dungeon-delve:
+  - "Dungeon Delve"
+
+babel:
+  - "Babel game"
+
+weatherstone:
+  - "Weatherstone"
+
+# ---- home-lan entities ------------------------------------------------------
+# These have entity- prefixed slugs; prose rarely uses that prefix.
+
+entity-pizero2:
+  - "Pi Zero 2W"
+  - "Pi Zero 2"
+  - "pizero2"
+  - "Pizero2"
+
+entity-pizero:
+  - "Pi Zero"
+  - "pizero"
+
+entity-actuate-dev:
+  - "actuate-dev"
+  - "actuate dev"
+
+entity-pihole:
+  - "Pi-hole"
+  - "pihole"
+  - "PiHole"
+
+entity-B7R:
+  - "B7R"
+
+entity-flipper-zero:
+  - "Flipper Zero"
+  - "Flipper"
+
+entity-turing-pi-2:
+  - "Turing Pi 2"
+  - "Turing Pi"
+
+# ---- large-language-models entities -----------------------------------------
+
+claude-code:
+  - "Claude Code"
+
+ollama:
+  - "Ollama"
+
+rag:
+  - "retrieval-augmented generation"
+  - "RAG pipeline"
+
+agentic-workflow:
+  - "agentic workflows"
+  - "agentic workflow"
+
+local-llm-deployment:
+  - "local LLM deployment"
+  - "local LLM"
+
+two-model-validation-pattern:
+  - "two-model validation"
+  - "two model validation"
+
+# ---- boardgame-io -----------------------------------------------------------
+# The library name has a dot; the slug uses a hyphen.
+
+boardgame-io:
+  - "boardgame.io"
+  - "BoardGame.io"
+
+# ---- known slug collisions (do NOT add aliases until resolved) ---------------
+# These slugs exist in two topics with different content. kb-relink skips them.
+# Resolve by consolidating the shorter note into the longer one and updating
+# backlinks, then add aliases here for the surviving note.
+#
+# jorge-luis-borges  — literature-and-metaphysics (72 lines, canonical)
+#                      vs folklore-and-bestiaries (21 lines, stub)
+# rumi               — mysticism (27 lines) vs celestial-spheres (25 lines)
+# hildegard-of-bingen — mysticism (29 lines) vs celestial-spheres (25 lines)
+# viriditas          — mysticism (29 lines) vs celestial-spheres (21 lines)
+# raspberry-pi       — diy-electronics (25 lines) vs software-defined-radio (23 lines)
+
+# ---- add new entries below as you find phrases the heuristic misses ---------
+# Tip: after running /kb-relink, look at which anchors you expected to see
+# additions for but didn't -- they probably need an alias here.

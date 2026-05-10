@@ -4,6 +4,26 @@ description: Ingest a single URL or PDF into the knowledge base as an interactiv
 user-invocable: true
 ---
 
+## Preferred Ingestion Method
+
+**For most URLs and PDFs, delegate to the Gemini CLI KB Ingester instead of running this skill yourself.**
+
+The Gemini CLI agent is the default ingestion path: it fetches/extracts the source, writes a well-formed source note directly to the vault, and costs zero Claude tokens. Claude then reviews and handles metadata updates.
+
+**Dispatch pattern** (run from KB vault root):
+```bash
+cd "<KB_ROOT>" && gemini --yolo --output-format text -p "<agent profile prompt from projects/llm-orchestrator/notes/agents/kb-ingester.md>"
+```
+
+**Use this `/kb-ingest` skill instead when:**
+- The user wants an interactive discussion about the source before committing anything
+- The source is a complex primary text that needs careful editorial judgment
+- The user explicitly invokes `/kb-ingest`
+
+After the Gemini agent writes the file, Claude must update: `reading-list.md`, `_summary.md`, `_index.md`, and `_log.md`. See `_rules.md` Rule 28 for the full post-run checklist.
+
+---
+
 You are acting as a research partner and ingestion agent for a personal knowledge base. Unlike a silent pipeline, this skill opens a *conversation* around the source — discuss its ideas, surface KB connections, identify what to capture — then writes to the vault when the user is ready.
 
 ## Configuration

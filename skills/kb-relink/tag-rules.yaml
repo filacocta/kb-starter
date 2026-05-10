@@ -1,0 +1,552 @@
+# kb-relink curated tag-enrichment rules
+# Populated 2026-05-10 from live vault tag inventory and anchor map.
+#
+# Strategy: via_anchor rules are the most precise — they require
+# VIA_ANCHOR_TRIGGER_MIN (default 2) distinct anchors from the list to be
+# present in a note before the tag fires. Phrase rules require
+# PHRASE_TRIGGER_MIN (default 5) safe-zone matches. Both err conservative.
+#
+# Tags omitted intentionally:
+#   #logic, #software, #hardware, #python, #api, #open-source — too generic;
+#     phrase triggers would fire on unrelated notes.
+#   #synthesis, #source, #worklog — structural; set at creation, not enriched.
+#   Singleton topic tags (#aesthetics, etc.) — already set at note creation.
+
+# ---- cellular-automata ------------------------------------------------------
+
+"#cellular-automata":
+  phrases:
+    - "cellular automaton"
+    - "cellular automata"
+  via_anchor:
+    - conways-game-of-life
+    - elementary-cellular-automaton
+    - rule-110
+    - rule-30
+    - rule-90
+    - rule-184
+    - wolfram-classes
+    - neural-ca
+    - lenia
+    - langtons-ant
+    - totalistic-ca
+    - probabilistic-ca
+    - reversible-ca
+    - asynchronous-ca
+    - cyclic-cellular-automaton
+
+"#urban-ca":
+  phrases:
+    - "urban CA"
+    - "urban cellular automaton"
+    - "urban cellular automata"
+    - "land use change model"
+  via_anchor:
+    - urban-ca-simulation
+    - urban-ca-design-decisions
+    - geographic-automata
+    - gis-ca-integration
+    - sleuth-model
+
+# ---- folklore-and-bestiaries ------------------------------------------------
+
+"#fearsome-critters":
+  phrases:
+    - "fearsome critter"
+    - "fearsome critters"
+  via_anchor:
+    - fearsome-critters
+    - agropelter
+    - axe-handle-hound
+    - ball-tailed-cat
+    - cactus-cat
+    - dungavenhooter
+    - gumberoo
+    - hodag
+    - hugag
+    - hoop-snake
+    - roperite
+    - squonk
+    - treesqueak
+    - whiffenpoof
+    - luferlang
+    - gormagunt
+    - tote-road-shagamaw
+    - side-hill-gouger
+    - tripodero
+
+"#tall-tale":
+  phrases:
+    - "tall tale"
+    - "tall tales"
+    - "frontier lore"
+  via_anchor:
+    - fearsome-critters
+    - lumberjack-tall-tales
+    - agropelter
+    - axe-handle-hound
+    - cactus-cat
+    - dungavenhooter
+    - gumberoo
+    - hodag
+    - hugag
+    - squonk
+    - treesqueak
+    - whiffenpoof
+
+"#cryptid":
+  phrases:
+    - "cryptid"
+    - "cryptids"
+    - "cryptozoology"
+  via_anchor:
+    - mothman
+    - chupacabra
+    - jersey-devil
+    - bigfoot-sasquatch
+    - wendigo
+    - flatwoods-monster
+    - dark-watchers
+    - skinwalker
+
+"#american-folklore":
+  phrases:
+    - "American folklore"
+    - "American folk"
+  via_anchor:
+    - jersey-devil
+    - mothman
+    - bigfoot-sasquatch
+    - wendigo
+    - dark-watchers
+    - lumberjack-tall-tales
+    - fearsome-critters
+    - appalachian-and-southern-folklore
+    - american-cryptid-tradition
+    - stick-indians
+
+"#folklore":
+  phrases:
+    - "folk tradition"
+    - "folk belief"
+    - "folk narrative"
+  via_anchor:
+    - vampire-lore
+    - native-american-animal-spirits
+    - appalachian-and-southern-folklore
+    - american-cryptid-tradition
+    - creature-as-social-text
+    - lumberjack-tall-tales
+
+# ---- borges -----------------------------------------------------------------
+
+"#borges":
+  phrases:
+    - "Borges"
+    - "Jorge Luis Borges"
+  via_anchor:
+    - jorge-luis-borges
+    - the-aleph
+    - infinite-library
+    - forking-time
+    - labyrinth
+    - fauna-of-mirrors
+    - hronir
+    - borges-mathematics-of-infinity
+    - libraries-as-metaphysics
+
+# ---- consciousness / analytical-psychology ----------------------------------
+
+"#jung":
+  phrases:
+    - "Jungian"
+  via_anchor:
+    - carl-jung
+    - analytical-psychology
+    - shadow
+    - archetypes
+    - individuation
+    - collective-unconscious
+    - synchronicity
+    - anima-animus
+    - puer-aeternus
+
+"#analytical-psychology":
+  phrases:
+    - "analytical psychology"
+    - "depth psychology"
+  via_anchor:
+    - analytical-psychology
+    - carl-jung
+    - shadow
+    - archetypes
+    - individuation
+    - collective-unconscious
+
+"#archetypes":
+  phrases:
+    - "archetypal"
+  via_anchor:
+    - archetypes
+    - shadow
+    - anima-animus
+    - collective-unconscious
+    - monomyth
+    - carl-jung
+
+"#collective-unconscious":
+  phrases:
+    - "collective unconscious"
+    - "species-wide psyche"
+  via_anchor:
+    - collective-unconscious
+    - carl-jung
+    - archetypes
+    - analytical-psychology
+
+"#consciousness":
+  phrases:
+    - "hard problem of consciousness"
+    - "phenomenal consciousness"
+    - "qualia"
+  via_anchor:
+    - shadow
+    - archetypes
+    - individuation
+    - collective-unconscious
+    - carl-jung
+    - analytical-psychology
+    - synchronicity
+    - bicameral-mind
+    - primacy-of-consciousness
+
+# ---- mysticism --------------------------------------------------------------
+
+"#mysticism":
+  phrases:
+    - "mystical"
+    - "mysticism"
+  via_anchor:
+    - sufism
+    - hermeticism
+    - perennialism
+    - christian-mysticism
+    - contemplative-traditions
+    - ibn-arabi
+    - meister-eckhart
+
+"#sufism":
+  phrases:
+    - "Sufi"
+    - "Sufism"
+  via_anchor:
+    - sufism
+    - ibn-arabi
+    - rumi
+    - nafs
+    - sufi-psychology
+    - muhammad-raheem-bawa-muhaiyaddeen
+
+"#perennialism":
+  phrases:
+    - "perennialism"
+    - "Perennial Philosophy"
+    - "philosophia perennis"
+  via_anchor:
+    - perennialism
+    - hermeticism
+    - contemplative-traditions
+    - sufism
+
+"#hermeticism":
+  phrases:
+    - "Hermetic"
+    - "hermeticism"
+    - "Hermeticism"
+    - "as above so below"
+  via_anchor:
+    - hermeticism
+    - florentine-neoplatonism
+    - marsilio-ficino
+
+# ---- game theory / evolutionary algorithms ----------------------------------
+
+"#game-theory":
+  phrases:
+    - "game theory"
+    - "game-theoretic"
+  via_anchor:
+    - nash-equilibrium
+    - folk-theorem
+    - exploitability
+    - counterfactual-regret-minimisation
+    - regret
+    - evolutionary-game-theory
+    - mechanism-design
+    - hawk-dove-game
+    - evolutionarily-stable-strategy
+    - signaling-game
+    - replicator-dynamics
+    - extensive-games
+
+"#evolutionary-algorithms":
+  phrases:
+    - "evolutionary algorithm"
+    - "genetic algorithm"
+    - "evolutionary computation"
+  via_anchor:
+    - genetic-algorithm
+    - neuroevolution
+    - evolution-strategies
+    - differential-evolution
+    - genetic-programming
+    - modular-coevolution
+    - fitness-landscape
+    - schema-theorem
+    - no-free-lunch-theorem
+
+"#neuroevolution":
+  phrases:
+    - "neuroevolution"
+    - "Neuroevolution"
+    - "NEAT"
+  via_anchor:
+    - neuroevolution
+    - evojax
+    - neat-python
+
+"#nash-equilibrium":
+  phrases:
+    - "Nash equilibrium"
+    - "Nash Equilibrium"
+  via_anchor:
+    - nash-equilibrium
+    - folk-theorem
+    - exploitability
+    - evolutionary-game-theory
+
+"#cfr":
+  phrases:
+    - "counterfactual regret"
+    - "regret minimisation"
+    - "regret minimization"
+  via_anchor:
+    - counterfactual-regret-minimisation
+    - poker-ai
+    - regret
+
+# ---- poker / sports-betting -------------------------------------------------
+
+"#poker":
+  phrases:
+    - "poker"
+  via_anchor:
+    - poker-ai
+    - poker-in-boardgame-io
+    - counterfactual-regret-minimisation
+
+"#sports-betting":
+  phrases:
+    - "sports betting"
+    - "closing line value"
+    - "CLV"
+    - "expected value betting"
+  via_anchor:
+    - expected-value-and-fair-value
+    - bankroll-management
+    - arbitrage-and-clv
+    - core-betting-concepts
+    - salami-betting
+    - line-movement-and-sharp-action
+    - alt-line-pricing-and-probability-decomposition
+
+"#betting-strategy":
+  phrases:
+    - "Kelly criterion"
+    - "unit sizing"
+    - "line shopping"
+  via_anchor:
+    - bankroll-management
+    - arbitrage-and-clv
+    - expected-value-and-fair-value
+    - core-betting-concepts
+
+# ---- software / projects ----------------------------------------------------
+
+"#boardgame-io":
+  phrases:
+    - "boardgame.io"
+    - "BoardGame.io"
+  via_anchor:
+    - boardgame-io
+    - boardgame-io-game-model
+    - boardgame-io-multiplayer
+    - boardgame-io-plugin-system
+    - boardgame-io-secret-state
+    - boardgame-io-turn-order
+
+"#duckmage":
+  phrases:
+    - "Duckmage"
+    - "duckmage"
+    - "the Reaches"
+  via_anchor:
+    - duckmage-plugin
+    - duckmage-world
+
+"#obsidian":
+  phrases:
+    - "Obsidian vault"
+    - "Obsidian plugin"
+  via_anchor:
+    - obsidian-dataview
+    - obsidian-cli
+    - obsidian-plugins
+    - obsidian-internal-links
+
+"#raspberry-pi":
+  phrases:
+    - "Raspberry Pi"
+  via_anchor:
+    - entity-pizero
+    - entity-pizero2
+    - raspberry-pi
+    - raspberry-pi-5
+
+"#sdr":
+  phrases:
+    - "software-defined radio"
+    - "RTL-SDR"
+  via_anchor:
+    - sdr-fundamentals
+    - rtl-sdr
+    - gnu-radio
+    - apt-reception
+    - lrpt-reception
+
+# ---- hexcrawl / RPG ---------------------------------------------------------
+
+"#hexcrawl":
+  phrases:
+    - "hexcrawl"
+    - "hex crawl"
+  via_anchor:
+    - hexcrawl
+    - modular-hexcrawl-travel
+    - hexcrawl-dashboard-spec
+    - forbidden-lands
+
+"#OSR":
+  phrases:
+    - "Old School Renaissance"
+    - "old-school renaissance"
+  via_anchor:
+    - osr-design
+    - sandbox-rpg
+    - adventure-design-philosophy
+    - hexcrawl
+
+"#adventure-design":
+  phrases:
+    - "adventure design"
+    - "dungeon design"
+    - "three-clue rule"
+  via_anchor:
+    - adventure-design-philosophy
+    - three-clue-rule
+    - node-based-design
+    - five-room-dungeon
+    - random-tables
+
+# ---- semiotics / philosophy -------------------------------------------------
+
+"#semiotics":
+  phrases:
+    - "semiotics"
+    - "semiotic"
+    - "signifier and signified"
+  via_anchor:
+    - semiotic-theory
+    - triadic-semiosis
+    - hyperreality
+    - simulacra
+    - context-dependence-of-meaning
+
+"#metaphysics":
+  phrases:
+    - "metaphysics"
+    - "metaphysical"
+    - "ontology"
+  via_anchor:
+    - idealism
+    - the-aleph
+    - transfinite-numbers
+    - primacy-of-consciousness
+    - labyrinth
+    - strange-loop
+
+"#neoplatonism":
+  phrases:
+    - "Neoplatonism"
+    - "Neoplatonic"
+    - "emanation"
+  via_anchor:
+    - florentine-neoplatonism
+    - marsilio-ficino
+    - ptolemaic-cosmology
+    - soul-ascent-through-spheres
+    - empyrean
+
+"#astronomy":
+  phrases:
+    - "celestial sphere"
+    - "Ptolemaic"
+    - "geocentric model"
+  via_anchor:
+    - ptolemaic-cosmology
+    - empyrean
+    - primum-mobile
+    - planetary-symbolism
+    - atmospheric-refraction
+    - soul-ascent-through-spheres
+
+# ---- worldbuilding / geography ----------------------------------------------
+
+"#worldbuilding":
+  phrases:
+    - "worldbuilding"
+    - "world-building"
+    - "procedural generation"
+  via_anchor:
+    - biome-distribution
+    - river-systems
+    - settlement-geography
+    - terrain-transitions
+    - tectonic-landforms
+    - voronoi-tessellation
+    - rain-shadow-and-climate
+
+"#terrain":
+  phrases:
+    - "heightmap"
+    - "terrain generation"
+  via_anchor:
+    - tectonic-landforms
+    - coastal-landforms
+    - terrain-transitions
+    - river-systems
+    - biome-distribution
+
+# ---- internet-and-attention -------------------------------------------------
+
+"#internet":
+  phrases:
+    - "attention economy"
+    - "social media algorithm"
+    - "outrage machine"
+  via_anchor:
+    - attention-fragmentation
+    - egregore
+    - old-internet
+    - scope-mismatch
+    - webdigging
