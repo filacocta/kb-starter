@@ -332,7 +332,15 @@ If it does not exist yet, create it with the current source marked processed and
 - Updated: _index.md
 ```
 
-### Step H — Complete the checkpoint
+### Step H — Refresh the frontmatter cache
+
+```bash
+kb-index --update
+```
+
+This keeps `kb-search` accurate for the next session. If `kb-index` is not on PATH, skip silently.
+
+### Step I — Complete the checkpoint
 
 Set `**Status:** complete`, update `**Last updated:**`.
 

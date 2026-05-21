@@ -1,0 +1,272 @@
+#!/usr/bin/env python3
+"""kb-index — build and update a frontmatter cache for the Obsidian KB.
+
+Writes `_kb-index.json` at the KB root. Each record contains path, type,
+topic, title, description, tags, status, and modified date — enough to
+navigate the KB without reading individual files.
+
+Usage:
+  kb-index           rebuild full cache (default)
+  kb-index --update  only re-scan files newer than the cache
+  kb-index --stats   print summary statistics
+
+Exit codes:
+  0 = success
+  2 = error (KB not found)
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+from datetime import datetime
+from pathlib import Path
+
+import yaml
+
+# ---------------------------------------------------------------------------
+# Config — shared with kb-tag/kb-lint pattern
+# ---------------------------------------------------------------------------
+
+
+def resolve_kb_root() -> Path:
+    env_val = os.environ.get("KB_ROOT")
+    if env_val:
+        return Path(os.path.expanduser(env_val)).resolve()
+    kb_config = Path.home() / ".claude/kb-config.md"
+    if kb_config.exists():
+        for line in kb_config.read_text().splitlines():
+            line = line.strip()
+            if line.startswith("KB_ROOT:") or line.startswith("KB_ROOT="):
+                val = line.split(":", 1)[-1] if ":" in line else line.split("=", 1)[-1]
+                val = val.strip().strip('"').strip("'")
+                if val:
+                    return Path(os.path.expanduser(val)).resolve()
+    return (Path.home() / "Documents/vault/knowledgebase").resolve()
+
+
+INDEX_FILE = "_kb-index.json"
+
+SKIP_NAMES = {
+    "_index.md", "_checkpoint.md", "_schema.md", "_rules.md",
+    "_dive-queue.md", "_todo.md", "_log.md", "_relink-report.md",
+    "_workflow-checklist.md", "_no-emojis.md", "_kb-index.json",
+    "reading-list.md", "LINKS.md", "README.md",
+}
+SKIP_DIRS = {".obsidian", ".git", ".trash", "bases", "sources"}
+SKIP_PREFIXES = ("topics/personal-notes/notes/daily/",)
+
+FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+SIMPLE_FIELD_RE = re.compile(r"^([\w-]+):\s*(.+)$", re.MULTILINE)
+
+
+def is_skipped(path: Path, kb_root: Path) -> bool:
+    rel = str(path.relative_to(kb_root))
+    parts = Path(rel).parts
+    if any(p in SKIP_DIRS for p in parts):
+        return True
+    if path.name in SKIP_NAMES or path.name.startswith("_"):
+        return True
+    if path.suffix == ".base":
+        return True
+    if any(rel.startswith(p) for p in SKIP_PREFIXES):
+        return True
+    return False
+
+
+def parse_frontmatter(text: str) -> dict:
+    m = FRONTMATTER_RE.match(text)
+    if not m:
+        return {}
+    raw = m.group(1)
+    try:
+        fm = yaml.safe_load(raw) or {}
+        if isinstance(fm, dict):
+            return fm
+    except yaml.YAMLError:
+        pass
+    # Fallback: simple regex for scalar fields
+    fm = {}
+    for km in SIMPLE_FIELD_RE.finditer(raw):
+        key, val = km.group(1), km.group(2).strip().strip('"').strip("'")
+        if key in ("type", "topic", "title", "description", "entity-type",
+                   "status", "created", "modified", "updated"):
+            fm[key] = val
+    return fm
+
+
+def extract_tags(fm: dict) -> list[str]:
+    raw = fm.get("tags")
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [str(t) for t in raw if t]
+    if isinstance(raw, str):
+        return [t.strip() for t in raw.replace(",", " ").split() if t.strip()]
+    return []
+
+
+def extract_description(fm: dict, body: str) -> str:
+    """Get description: frontmatter field, or first non-heading sentence."""
+    desc = fm.get("description", "")
+    if desc:
+        return str(desc).strip()[:300]
+    # Fall back to first non-empty, non-heading line of body
+    for line in body.splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and not line.startswith("---"):
+            return line[:300]
+    return ""
+
+
+def derive_topic(fm: dict, path: Path, kb_root: Path) -> str:
+    topic = str(fm.get("topic", "")).strip()
+    if topic:
+        return topic
+    parts = path.relative_to(kb_root).parts
+    if len(parts) >= 2 and parts[0] in ("topics", "projects"):
+        return parts[1]
+    return ""
+
+
+def build_record(path: Path, kb_root: Path) -> dict | None:
+    if is_skipped(path, kb_root):
+        return None
+    try:
+        mtime_s = path.stat().st_mtime
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    m = FRONTMATTER_RE.match(text)
+    body = text[m.end():] if m else text
+    fm = parse_frontmatter(text)
+
+    if not fm and not text.startswith("---"):
+        return None  # no frontmatter at all — not a KB note
+
+    rel = str(path.relative_to(kb_root))
+
+    return {
+        "path": rel,
+        "type": str(fm.get("type", "")).strip(),
+        "topic": derive_topic(fm, path, kb_root),
+        "title": str(fm.get("title", path.stem.replace("-", " ").title())).strip(),
+        "description": extract_description(fm, body),
+        "tags": extract_tags(fm),
+        "status": str(fm.get("status", "")).strip(),
+        "modified": str(fm.get("modified", fm.get("updated", ""))).strip(),
+        "mtime": mtime_s,
+        "is_stub": "This is a stub" in body,
+    }
+
+
+def build_index(kb_root: Path, update_only: bool = False) -> list[dict]:
+    index_path = kb_root / INDEX_FILE
+    existing: dict[str, dict] = {}
+    cache_mtime = 0.0
+
+    if update_only and index_path.exists():
+        try:
+            data = json.loads(index_path.read_text())
+            existing = {r["path"]: r for r in data if isinstance(r, dict) and "path" in r}
+            cache_mtime = index_path.stat().st_mtime
+            print(f"Loaded {len(existing)} existing records (update mode)", file=sys.stderr)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    records: list[dict] = []
+    scanned = 0
+    updated = 0
+
+    search_dirs = [kb_root / "topics", kb_root / "projects"]
+    for d in search_dirs:
+        if not d.is_dir():
+            continue
+        for md_path in d.rglob("*.md"):
+            scanned += 1
+            rel = str(md_path.relative_to(kb_root))
+
+            if update_only and rel in existing:
+                try:
+                    file_mtime = md_path.stat().st_mtime
+                    if file_mtime <= cache_mtime:
+                        records.append(existing[rel])
+                        continue
+                except OSError:
+                    pass
+
+            rec = build_record(md_path, kb_root)
+            if rec:
+                records.append(rec)
+                updated += 1
+
+    print(f"Scanned {scanned} files, indexed {len(records)} notes ({updated} updated)",
+          file=sys.stderr)
+    return records
+
+
+def print_stats(records: list[dict]) -> None:
+    by_type: dict[str, int] = {}
+    by_topic: dict[str, int] = {}
+    stubs = sum(1 for r in records if r.get("is_stub"))
+    untagged = sum(1 for r in records if not r.get("tags"))
+
+    for r in records:
+        t = r.get("type") or "unknown"
+        by_type[t] = by_type.get(t, 0) + 1
+        tp = r.get("topic") or "unknown"
+        by_topic[tp] = by_topic.get(tp, 0) + 1
+
+    print(f"\nKB Index Statistics")
+    print(f"  Total records:  {len(records)}")
+    print(f"  Stubs:          {stubs}")
+    print(f"  Untagged:       {untagged}")
+    print(f"\nBy type:")
+    for t, n in sorted(by_type.items(), key=lambda x: -x[1]):
+        print(f"  {t:20s} {n}")
+    print(f"\nTop topics:")
+    for tp, n in sorted(by_topic.items(), key=lambda x: -x[1])[:15]:
+        print(f"  {tp:35s} {n}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--update", action="store_true",
+                        help="Only re-scan files newer than the cache (faster)")
+    parser.add_argument("--stats", action="store_true",
+                        help="Print summary statistics after building")
+    parser.add_argument("--kb-root", default=None)
+    args = parser.parse_args()
+
+    kb_root = Path(args.kb_root) if args.kb_root else resolve_kb_root()
+    if not kb_root.is_dir():
+        print(f"error: KB not found at {kb_root}", file=sys.stderr)
+        return 2
+
+    records = build_index(kb_root, update_only=args.update)
+    records.sort(key=lambda r: r["path"])
+
+    # Write cache
+    index_path = kb_root / INDEX_FILE
+    out = {
+        "built": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "kb_root": str(kb_root),
+        "count": len(records),
+        "records": records,
+    }
+    index_path.write_text(json.dumps(out, indent=1, ensure_ascii=False))
+    print(f"Wrote {index_path} ({index_path.stat().st_size // 1024} KB)")
+
+    if args.stats:
+        print_stats(records)
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

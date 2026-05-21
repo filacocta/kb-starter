@@ -1,0 +1,278 @@
+#!/usr/bin/env python3
+"""kb-search — query the KB frontmatter cache without reading note files.
+
+Reads `_kb-index.json` and returns matching notes as a compact markdown
+table (path + title + tags + description snippet), or JSON.
+
+Usage:
+  kb-search --query "cellular automata"      # title/description keyword match
+  kb-search --tag turing-complete            # tag filter (substring match)
+  kb-search --topic cellular-automata        # all notes in topic
+  kb-search --type concept                   # by note type
+  kb-search --stub                           # only stub notes
+  kb-search --limit 20                       # max results (default: 15)
+  kb-search --json                           # JSON output
+  kb-search --peek topics/foo/bar.md         # frontmatter + first para of one file
+
+Flags can be combined: --topic X --type concept --query "rule"
+
+Exit codes:
+  0 = results found
+  1 = no results
+  2 = error (index not found)
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# KB root resolution
+# ---------------------------------------------------------------------------
+
+
+def resolve_kb_root() -> Path:
+    env_val = os.environ.get("KB_ROOT")
+    if env_val:
+        return Path(os.path.expanduser(env_val)).resolve()
+    kb_config = Path.home() / ".claude/kb-config.md"
+    if kb_config.exists():
+        for line in kb_config.read_text().splitlines():
+            line = line.strip()
+            if line.startswith("KB_ROOT:") or line.startswith("KB_ROOT="):
+                val = line.split(":", 1)[-1] if ":" in line else line.split("=", 1)[-1]
+                val = val.strip().strip('"').strip("'")
+                if val:
+                    return Path(os.path.expanduser(val)).resolve()
+    return (Path.home() / "Documents/vault/knowledgebase").resolve()
+
+
+# ---------------------------------------------------------------------------
+# Scoring
+# ---------------------------------------------------------------------------
+
+FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+
+
+def score_record(rec: dict, query_terms: list[str], tag_filter: str,
+                 topic_filter: str, type_filter: str, stub_only: bool) -> float:
+    # Hard filters
+    if tag_filter and not any(tag_filter.lower() in t.lower() for t in rec.get("tags", [])):
+        return -1
+    if topic_filter and rec.get("topic", "").lower() != topic_filter.lower():
+        return -1
+    if type_filter and rec.get("type", "").lower() != type_filter.lower():
+        return -1
+    if stub_only and not rec.get("is_stub"):
+        return -1
+
+    if not query_terms:
+        return 1.0  # no text filter — everything passes
+
+    score = 0.0
+    title = rec.get("title", "").lower()
+    desc = rec.get("description", "").lower()
+    path = rec.get("path", "").lower()
+    tags_str = " ".join(rec.get("tags", [])).lower()
+
+    for term in query_terms:
+        t = term.lower()
+        if t in title:
+            score += 3.0
+        elif t in tags_str:
+            score += 2.0
+        elif t in desc:
+            score += 1.5
+        elif t in path:
+            score += 0.5
+
+    return score if score > 0 else -1
+
+
+def search(records: list[dict], query: str | None, tag: str | None,
+           topic: str | None, type_: str | None, stub_only: bool,
+           limit: int) -> list[tuple[float, dict]]:
+    query_terms = query.split() if query else []
+    results: list[tuple[float, dict]] = []
+    for rec in records:
+        s = score_record(rec, query_terms, tag or "", topic or "", type_ or "", stub_only)
+        if s >= 0:
+            results.append((s, rec))
+    results.sort(key=lambda x: (-x[0], x[1]["path"]))
+    return results[:limit]
+
+
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+
+
+def truncate(s: str, n: int) -> str:
+    return s if len(s) <= n else s[:n - 1] + "…"
+
+
+def format_markdown(results: list[tuple[float, dict]], verbose: bool = False) -> str:
+    if not results:
+        return "_No results._"
+    lines = ["| Path | Title | Tags | Description |",
+             "|---|---|---|---|"]
+    for _score, r in results:
+        path = r.get("path", "")
+        title = r.get("title", "")
+        tags = ", ".join(r.get("tags", []))
+        desc = truncate(r.get("description", ""), 120)
+        lines.append(f"| `{path}` | {title} | {tags} | {desc} |")
+    return "\n".join(lines)
+
+
+def format_compact(results: list[tuple[float, dict]]) -> str:
+    """Compact format for LLM consumption: 1 record per 3 lines, no table overhead."""
+    if not results:
+        return "No results."
+    parts = []
+    for _score, r in results:
+        path = r.get("path", "")
+        title = r.get("title", "")
+        tags = " ".join(f"#{t}" for t in r.get("tags", []))
+        desc = truncate(r.get("description", ""), 200)
+        parts.append(f"**{title}** — `{path}`\n{tags}\n{desc}")
+    return "\n\n".join(parts)
+
+
+def peek_file(kb_root: Path, rel_path: str) -> str:
+    """Return frontmatter + first paragraph of one file."""
+    path = kb_root / rel_path
+    if not path.is_file():
+        # Try treating as a search term / file name
+        return f"File not found: {rel_path}"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as e:
+        return f"Error reading {rel_path}: {e}"
+
+    m = FRONTMATTER_RE.match(text)
+    if not m:
+        return text[:500]
+
+    fm_text = text[:m.end()]
+    body = text[m.end():]
+    # First non-empty paragraph
+    para_lines: list[str] = []
+    for line in body.splitlines():
+        if line.strip():
+            para_lines.append(line)
+        elif para_lines:
+            break
+
+    first_para = "\n".join(para_lines)[:400]
+    return f"{fm_text.rstrip()}\n\n{first_para}"
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--query", "-q", help="Keyword search on title/description/tags/path")
+    parser.add_argument("--tag", "-t", help="Filter by tag (substring match)")
+    parser.add_argument("--topic", help="Filter by topic slug")
+    parser.add_argument("--type", dest="type_", help="Filter by note type (concept|entity|synthesis|note|…)")
+    parser.add_argument("--stub", action="store_true", help="Only show stub notes")
+    parser.add_argument("--limit", "-n", type=int, default=15, help="Max results (default: 15)")
+    parser.add_argument("--json", action="store_true", help="JSON output")
+    parser.add_argument("--compact", action="store_true", help="Compact LLM-friendly text output (default)")
+    parser.add_argument("--table", action="store_true", help="Markdown table output")
+    parser.add_argument("--peek", metavar="PATH", help="Show frontmatter + first paragraph of a file")
+    parser.add_argument("--stats", action="store_true", help="Show index statistics instead of searching")
+    parser.add_argument("--kb-root", default=None)
+    args = parser.parse_args()
+
+    kb_root = Path(args.kb_root) if args.kb_root else resolve_kb_root()
+    if not kb_root.is_dir():
+        print(f"error: KB not found at {kb_root}", file=sys.stderr)
+        return 2
+
+    if args.peek:
+        print(peek_file(kb_root, args.peek))
+        return 0
+
+    index_path = kb_root / "_kb-index.json"
+    if not index_path.exists():
+        print("Index not found — building now...", file=sys.stderr)
+        import subprocess
+        subprocess.run([sys.executable, __file__.replace("kb-search", "kb-index")], check=False)
+        if not index_path.exists():
+            kb_index_bin = Path(sys.executable).parent / "kb-index"
+            subprocess.run(["kb-index"], check=False)
+        if not index_path.exists():
+            print(f"error: could not build index at {index_path}", file=sys.stderr)
+            return 2
+
+    # Warn if index is stale (>24h old)
+    import time
+    age_hours = (time.time() - index_path.stat().st_mtime) / 3600
+    if age_hours > 24:
+        print(f"note: index is {age_hours:.0f}h old — run `kb-index --update` to refresh",
+              file=sys.stderr)
+
+    try:
+        data = json.loads(index_path.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"error: cannot read index: {e}", file=sys.stderr)
+        return 2
+
+    records: list[dict] = data.get("records", [])
+    built = data.get("built", "unknown")
+
+    if args.stats:
+        by_type: dict[str, int] = {}
+        by_topic: dict[str, int] = {}
+        stubs = sum(1 for r in records if r.get("is_stub"))
+        untagged = sum(1 for r in records if not r.get("tags"))
+        for r in records:
+            by_type[r.get("type") or "?"] = by_type.get(r.get("type") or "?", 0) + 1
+            by_topic[r.get("topic") or "?"] = by_topic.get(r.get("topic") or "?", 0) + 1
+        print(f"Index built: {built}")
+        print(f"Total records: {len(records)}  Stubs: {stubs}  Untagged: {untagged}")
+        print("\nBy type:")
+        for t, n in sorted(by_type.items(), key=lambda x: -x[1])[:10]:
+            print(f"  {t:20s} {n}")
+        print("\nTop topics:")
+        for tp, n in sorted(by_topic.items(), key=lambda x: -x[1])[:15]:
+            print(f"  {tp:35s} {n}")
+        return 0
+
+    results = search(records, args.query, args.tag, args.topic, args.type_, args.stub, args.limit)
+
+    if not results:
+        if not args.json:
+            filters = []
+            if args.query: filters.append(f"query='{args.query}'")
+            if args.tag: filters.append(f"tag='{args.tag}'")
+            if args.topic: filters.append(f"topic='{args.topic}'")
+            print(f"No results for {', '.join(filters) or '(no filters)'}.")
+        return 1
+
+    if args.json:
+        output = [{"score": s, **r} for s, r in results]
+        print(json.dumps(output, indent=2))
+    elif args.table:
+        print(format_markdown(results))
+    else:
+        # Compact is default — most useful for Claude context
+        print(f"Found {len(results)} result(s) (index built {built}):\n")
+        print(format_compact(results))
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

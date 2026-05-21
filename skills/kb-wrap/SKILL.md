@@ -18,6 +18,19 @@ If $ARGUMENTS is empty, ask the user: "What project or topic should I update, an
 
 ## Procedure
 
+### 0 — Lint and fix gate
+
+Before writing any KB files, run:
+
+```bash
+kb-lint --no-orphans
+kb-fix --fix all
+```
+
+Show the `kb-lint` summary to the user. If `kb-fix` applied changes, note what was fixed. Then proceed.
+
+If `kb-lint` reports unfixable issues (broken wikilinks, orphans, stale dates), surface them briefly — don't skip past silently. They don't block the wrap but the user should know.
+
 ### 1 — Identify scope
 
 From $ARGUMENTS (or user response), determine:
@@ -58,6 +71,16 @@ Read the current tail of `_log.md` to match the existing format, then append:
 - <bullet per decision or notable outcome>
 **Status:** <where things stand now>
 ```
+
+### 5 — Refresh the frontmatter cache
+
+After all writes are complete, run:
+
+```bash
+kb-index --update
+```
+
+This keeps `kb-search` accurate for the next session. If `kb-index` is not on PATH, skip silently — it means the tool isn't installed yet.
 
 ---
 

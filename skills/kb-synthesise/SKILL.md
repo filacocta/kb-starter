@@ -4,6 +4,27 @@ description: Synthesise source notes for a topic into wiki articles. Reads all s
 user-invocable: true
 ---
 
+## Preferred Synthesis Method
+
+**For first-pass stub and entity generation across many topics, delegate to the Gemini CLI KB Synthesiser instead of running this skill yourself.**
+
+The Gemini CLI agent is the default for breadth synthesis: it reads all source files in a topic, writes concept stubs and entity profiles, and costs zero Claude tokens. Claude then reviews and enriches.
+
+**Dispatch pattern** (run from KB vault root):
+```bash
+cd "<KB_ROOT>" && gemini --yolo --output-format text -p "<agent profile prompt from projects/llm-orchestrator/notes/agents/kb-synthesiser.md>"
+```
+
+**Use this `/kb-synthesise` skill instead when:**
+- A topic has 3+ sources and needs full concept articles with synthesis (not just stubs)
+- Cross-topic canonical note detection is needed
+- The user wants to review and guide the synthesis before anything is written
+- The user explicitly invokes `/kb-synthesise`
+
+After the Gemini agent writes stubs/entities, Claude must: update `_summary.md` Key Concepts/Entities sections, increment note counts in `_index.md`, append to `_log.md`.
+
+---
+
 You are acting as a wiki synthesis agent for a personal knowledge base. Your job is to read the source notes accumulated for a topic and generate well-written concept articles, entity profiles, and synthesis notes from them — turning a folder of raw sources into a navigable wiki.
 
 ## Configuration
@@ -225,6 +246,8 @@ related: ["[[notes/concepts/<related>]]", "[[notes/entities/<related>]]"]
 
 Path: `topics/<topic>/notes/concepts/<concept-slug>.md`
 
+**Tags rule:** Always populate `tags` with structural tags + at least 2 content tags derived from the concept's title and description. Never leave `tags: []`. Structural tags: the topic slug, "concept". Content tags: what the concept *is* (e.g. rule-30 → `["concept", "cellular-automata", "elementary-ca", "wolfram-code", "class-2-ca"]`).
+
 ```markdown
 ---
 author: kb-bot
@@ -235,7 +258,7 @@ topic: <topic-slug>
 title: "<Concept Name>"
 description: "<One sentence definition.>"
 status: draft
-tags: ["<tag>"]
+tags: ["concept", "<topic-slug>", "<content-tag-1>", "<content-tag-2>"]
 sources: ["[[sources/<source-slug>]]"]
 related: []
 ---
@@ -255,6 +278,8 @@ related: []
 
 Path: `topics/<topic>/notes/entities/<entity-slug>.md`
 
+**Tags rule:** Always populate `tags` with: "entity", the topic slug, the entity-type value, plus 1-2 content tags (e.g. a person's role or field). Never leave `tags: []`. Example: john-keel → `["entity", "folklore-and-bestiaries", "person", "paranormal-investigator", "mothman"]`.
+
 ```markdown
 ---
 author: kb-bot
@@ -264,8 +289,9 @@ type: entity
 topic: <topic-slug>
 title: "<Entity Name>"
 description: "<One sentence: who/what this entity is and why it is relevant to this topic.>"
+entity-type: person|organisation|tool|project|game|text|place|creature
 status: draft
-tags: ["<tag>"]
+tags: ["entity", "<topic-slug>", "<entity-type>", "<content-tag-1>"]
 sources: ["[[sources/<source-slug>]]"]
 related: []
 ---
@@ -294,6 +320,8 @@ related: []
 
 Path: `topics/<topic>/notes/syntheses/<synthesis-slug>.md`
 
+**Tags rule:** Always populate `tags` with: "synthesis", the topic slug, plus 2-3 tags capturing the cross-cutting theme addressed. Never leave `tags: []`.
+
 ```markdown
 ---
 author: kb-bot
@@ -304,7 +332,7 @@ topic: <topic-slug>
 title: "<Synthesis Title>"
 description: "<One sentence: what cross-cutting question or comparison this note addresses.>"
 status: draft
-tags: ["<tag>"]
+tags: ["synthesis", "<topic-slug>", "<theme-tag-1>", "<theme-tag-2>"]
 sources: ["[[sources/...]]", "[[sources/...]]"]
 related: ["[[notes/concepts/...]]"]
 ---
@@ -359,7 +387,15 @@ After all notes are written:
 - Note count: <N> new notes (<M> full articles, <K> stubs, <J> entities, <L> syntheses)
 ```
 
-4. **Mark checkpoint complete.**
+4. **Refresh the frontmatter cache:**
+
+```bash
+kb-index --update
+```
+
+This keeps `kb-search` accurate for the next session. If `kb-index` is not on PATH, skip silently.
+
+5. **Mark checkpoint complete.**
 
 ---
 

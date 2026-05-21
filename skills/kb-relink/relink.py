@@ -1486,6 +1486,11 @@ def main() -> int:
     if args.report_path:
         write_markdown_report(args.report_path, summary)
 
+    if args.mode == "apply" and summary["files_with_proposals"] > 0:
+        import subprocess
+        print("Refreshing kb-index cache…", file=sys.stderr)
+        subprocess.run(["kb-index", "--update"], check=False)
+
     return 0
 
 

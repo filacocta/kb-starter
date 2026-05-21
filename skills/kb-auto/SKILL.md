@@ -96,7 +96,8 @@ Then report: `Paused after N items. Checkpoint written. Next /schedule run will 
 
 1. Update `_index.md` statistics.
 2. Append to `_log.md`.
-3. Set checkpoint `**Status:** complete`.
+3. Run `kb-index --update` to refresh the frontmatter cache so `kb-search` stays current.
+4. Set checkpoint `**Status:** complete`.
 4. Report:
 
 > **KB Auto — complete**

@@ -1,0 +1,441 @@
+#!/usr/bin/env python3
+"""kb-fix — autofix common kb-lint warnings in-place.
+
+Applies safe, mechanical transformations to KB markdown files.
+Run `kb-lint` first to survey what needs fixing, then `kb-fix` to apply.
+
+Usage:
+    kb-fix                           list fixers and how many hits each finds
+    kb-fix --fix unrendered_math     apply one specific fixer
+    kb-fix --fix all                 apply all fixers
+    kb-fix --fix all --dry-run       preview changes without writing
+    kb-fix --topic math-notation     restrict to one topic
+    kb-fix --json                    machine-readable output
+
+Fixers
+------
+unrendered_math
+    Converts  LaTeX: `\\cmd` or `\\cmd2`
+    to        $$\\cmd \\quad\\text{or}\\quad \\cmd2$$
+    Any non-backtick suffix (e.g. parenthetical) is moved to a new paragraph.
+    Only fires inside the 'LaTeX: ...' label pattern — backtick spans inside
+    tables or fenced code blocks are left alone.
+
+missing_author
+    Inserts `author: kb-bot` as the first frontmatter field when `author:` is
+    absent from a note file under topics/ or projects/.
+
+infer_frontmatter
+    Adds missing `type:` and `topic:` frontmatter fields, inferred from the
+    file's path within the KB (topics/<name>/… → type: note, topic: <name>).
+    Will not overwrite existing values.
+
+stub_frontmatter
+    For files with NO frontmatter block at all, prepends a minimal YAML block
+    with `type:`, `topic:`, `created:`, and `modified:` inferred from the file
+    path and today's date.  Only acts on files under topics/ or projects/.
+    Skips _summary.md, _index.md, README.md and daily notes (they have their
+    own schema conventions).
+
+Exit codes
+----------
+0  nothing to fix (or --dry-run with no changes)
+1  changes applied (or --dry-run: changes would be applied)
+2  error
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import re
+import sys
+from dataclasses import dataclass, asdict
+from pathlib import Path
+
+# ── regex constants ────────────────────────────────────────────────────────────
+
+FENCE_START_RE = re.compile(r"^```")
+FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
+
+# unrendered_math: matches a full line of the form "LaTeX: `...`"
+LATEX_LABEL_RE = re.compile(r"^LaTeX:\s+(.+)$")
+BACKTICK_ITEM_RE = re.compile(r"`([^`]+)`")
+
+# table_math: backtick spans containing a backslash (LaTeX commands) in table rows
+TABLE_ROW_RE = re.compile(r"^\|")
+BACKTICK_BACKSLASH_RE = re.compile(r"`([^`]*\\[^`]*)`")
+
+
+# ── KB root resolution (mirrors kb-lint) ──────────────────────────────────────
+
+def resolve_kb_root() -> Path:
+    env_val = os.environ.get("KB_ROOT")
+    if env_val:
+        return Path(os.path.expanduser(env_val)).resolve()
+    kb_config = Path.home() / ".claude/kb-config.md"
+    if kb_config.exists():
+        for line in kb_config.read_text().splitlines():
+            line = line.strip()
+            if line.startswith("KB_ROOT:") or line.startswith("KB_ROOT="):
+                val = line.split(":", 1)[-1] if ":" in line else line.split("=", 1)[-1]
+                val = val.strip().strip('"').strip("'")
+                if val:
+                    return Path(os.path.expanduser(val)).resolve()
+    return (Path.home() / "Documents/vault/knowledgebase").resolve()
+
+
+def walk_kb(root: Path, topic: str | None = None) -> list[Path]:
+    base = root / "topics" / topic if topic else root
+    out: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(base, followlinks=True):
+        dirnames[:] = [d for d in dirnames if d not in (".obsidian", ".git", ".trash")]
+        for fn in filenames:
+            if fn.endswith(".md"):
+                out.append(Path(dirpath) / fn)
+    return out
+
+
+# ── Fix result ────────────────────────────────────────────────────────────────
+
+@dataclass
+class FixResult:
+    file: str
+    fixer: str
+    changes: int
+    preview: list[str]  # before → after samples (first 3)
+
+
+# ── Individual fixers ─────────────────────────────────────────────────────────
+
+def _fix_unrendered_math(text: str) -> tuple[str, int, list[str]]:
+    """Convert unrendered LaTeX in two patterns:
+    1. 'LaTeX: `\\cmd`' standalone lines → $$\\cmd$$ display math block
+    2. Table rows: `\\cmd` backtick spans → $\\cmd$ inline math
+    """
+    lines = text.split("\n")
+    out: list[str] = []
+    changes = 0
+    samples: list[str] = []
+    in_fence = False
+
+    for line in lines:
+        if FENCE_START_RE.match(line):
+            in_fence = not in_fence
+            out.append(line)
+            continue
+
+        if in_fence:
+            out.append(line)
+            continue
+
+        # Pattern 1: standalone "LaTeX: `\cmd`" label lines → display math block
+        m = LATEX_LABEL_RE.match(line)
+        if m:
+            rest = m.group(1)
+            bt_matches = list(BACKTICK_ITEM_RE.finditer(rest))
+            parts = [bm.group(1) for bm in bt_matches]
+            if parts and any("\\" in p for p in parts):
+                suffix = rest[bt_matches[-1].end():].strip()
+                combined = " \\quad\\text{or}\\quad ".join(parts)
+                new_line = f"$${combined}$$"
+                if suffix:
+                    new_line += f"\n\n{suffix}"
+                if len(samples) < 3:
+                    samples.append(f"{line!r} → {new_line.splitlines()[0]!r}")
+                out.append(new_line)
+                changes += 1
+                continue
+
+        # Pattern 2: table rows — replace `\cmd` spans with $\cmd$ inline math.
+        # Uses split-based pairing (odd-indexed parts = inside backtick spans) so
+        # the regex never misidentifies cross-cell content as a backtick span.
+        if TABLE_ROW_RE.match(line):
+            parts = line.split("`")
+            n = 0
+            new_parts = [parts[0]]
+            for idx in range(1, len(parts)):
+                if idx % 2 == 1:  # inside a backtick span
+                    # Only convert \letter patterns (LaTeX commands), not \| or \. etc.
+                    # Skip spans already dollar-wrapped ($\cmd$) — those are intentional syntax docs.
+                    if re.search(r"\\[a-zA-Z]", parts[idx]) and not parts[idx].startswith("$"):
+                        new_parts.append(f"${parts[idx]}$")
+                        n += 1
+                    else:
+                        new_parts.append(f"`{parts[idx]}`")
+                else:  # between spans
+                    new_parts.append(parts[idx])
+            if n:
+                new_line = "".join(new_parts)
+                changes += n
+                if len(samples) < 3:
+                    samples.append(f"table: {n} span(s) converted in {line[:60].rstrip()!r}")
+                out.append(new_line)
+                continue
+
+        out.append(line)
+
+    return "\n".join(out), changes, samples
+
+
+def _fix_missing_author(text: str, rel: str, author: str = "kb-bot") -> tuple[str, int, list[str]]:
+    """Insert 'author: <author>' into frontmatter if the field is absent."""
+    # Only act on notes under topics/ or projects/
+    if not (rel.startswith("topics/") or rel.startswith("projects/")):
+        return text, 0, []
+
+    m = FRONTMATTER_RE.match(text)
+    if not m:
+        return text, 0, []
+
+    fm_raw = m.group(1)
+    if "author:" in fm_raw:
+        return text, 0, []
+
+    fm_lines = fm_raw.split("\n")
+    fm_lines.insert(0, f"author: {author}")
+    new_fm = "\n".join(fm_lines)
+    new_text = f"---\n{new_fm}\n---\n{text[m.end():]}"
+    return new_text, 1, [f"added author: {author}"]
+
+
+def _infer_type_and_topic(rel: str) -> tuple[str | None, str | None]:
+    """Return (type, topic) inferred from path, or (None, None) if unclear."""
+    parts = rel.split("/")
+    if parts[0] == "topics" and len(parts) >= 2:
+        topic = parts[1]
+        if parts[-1] == "_summary.md":
+            return "summary", topic
+        if "sources" in parts:
+            return "source", topic
+        return "note", topic
+    if parts[0] == "projects" and len(parts) >= 2:
+        topic = parts[1]
+        if parts[-1] == "_summary.md":
+            return "summary", topic
+        return "note", topic
+    return None, None
+
+
+def _fix_infer_frontmatter(text: str, rel: str) -> tuple[str, int, list[str]]:
+    """Add missing type: and topic: to frontmatter, inferred from file path."""
+    m = FRONTMATTER_RE.match(text)
+    if not m:
+        return text, 0, []
+
+    fm_raw = m.group(1)
+    inferred_type, inferred_topic = _infer_type_and_topic(rel)
+    additions: list[str] = []
+    samples: list[str] = []
+
+    if "type:" not in fm_raw and inferred_type:
+        additions.append(f"type: {inferred_type}")
+        samples.append(f"added type: {inferred_type}")
+    if "topic:" not in fm_raw and inferred_topic:
+        additions.append(f"topic: {inferred_topic}")
+        samples.append(f"added topic: {inferred_topic}")
+
+    if not additions:
+        return text, 0, []
+
+    fm_lines = fm_raw.split("\n")
+    fm_lines.extend(additions)
+    new_fm = "\n".join(fm_lines)
+    new_text = f"---\n{new_fm}\n---\n{text[m.end():]}"
+    return new_text, len(additions), samples
+
+
+_SKIP_STUB_NAMES = {"_summary.md", "_index.md", "README.md"}
+
+
+def _is_infrastructure(rel: str) -> bool:
+    """Mirror kb-lint's _is_infrastructure_file: skip auto-generated / schema files."""
+    basename = rel.split("/")[-1]
+    if basename.startswith("_"):       # _log.md, _schema.md, etc.
+        return True
+    if "_Index_of_" in basename:       # auto-generated vault index files
+        return True
+    if rel.startswith("clippings/"):
+        return True
+    if rel.startswith("readinglist/"):
+        return True
+    return False
+
+
+def _fix_stub_frontmatter(text: str, rel: str) -> tuple[str, int, list[str]]:
+    """Prepend a minimal YAML frontmatter block to files that have none at all.
+
+    Only acts on files under topics/ or projects/ that are not _summary.md,
+    _index.md, README.md, daily notes, or infrastructure files.  Infers type
+    and topic from path; uses today's date for created/modified.
+    """
+    parts = rel.split("/")
+    if parts[0] not in ("topics", "projects"):
+        return text, 0, []
+    if parts[-1] in _SKIP_STUB_NAMES:
+        return text, 0, []
+    if "/notes/daily/" in rel:
+        return text, 0, []
+    if _is_infrastructure(rel):
+        return text, 0, []
+
+    # Only fire when there is genuinely no frontmatter
+    if FRONTMATTER_RE.match(text):
+        return text, 0, []
+
+    inferred_type, inferred_topic = _infer_type_and_topic(rel)
+    today = dt.date.today().isoformat()
+    fields = ["author: kb-bot", f"created: {today}", f"modified: {today}"]
+    if inferred_type:
+        fields.append(f"type: {inferred_type}")
+    if inferred_topic:
+        fields.append(f"topic: {inferred_topic}")
+
+    new_fm = "\n".join(fields)
+    new_text = f"---\n{new_fm}\n---\n\n{text}"
+    sample = f"stub added ({', '.join(f.split(':')[0] for f in fields)})"
+    return new_text, 1, [sample]
+
+
+# ── Fixer registry ────────────────────────────────────────────────────────────
+
+ALL_FIXERS = ["unrendered_math", "missing_author", "infer_frontmatter", "stub_frontmatter"]
+
+FIXER_DESCRIPTIONS = {
+    "unrendered_math": "LaTeX: `\\cmd` patterns → $$\\cmd$$ display math",
+    "missing_author": "add author: kb-bot to notes missing the field",
+    "infer_frontmatter": "add type: and topic: inferred from file path",
+    "stub_frontmatter": "prepend minimal frontmatter to files with none at all",
+}
+
+
+def apply_fixers(path: Path, rel: str, fixers: list[str], dry_run: bool) -> list[FixResult]:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as e:
+        print(f"kb-fix: cannot read {rel}: {e}", file=sys.stderr)
+        return []
+
+    results: list[FixResult] = []
+    current = text
+
+    for fixer in fixers:
+        if fixer == "unrendered_math":
+            new, count, samples = _fix_unrendered_math(current)
+        elif fixer == "missing_author":
+            new, count, samples = _fix_missing_author(current, rel)
+        elif fixer == "infer_frontmatter":
+            new, count, samples = _fix_infer_frontmatter(current, rel)
+        elif fixer == "stub_frontmatter":
+            new, count, samples = _fix_stub_frontmatter(current, rel)
+        else:
+            continue
+
+        if count:
+            results.append(FixResult(file=rel, fixer=fixer, changes=count, preview=samples))
+            current = new  # chain fixers on the same text
+
+    if results and not dry_run and current != text:
+        path.write_text(current, encoding="utf-8")
+
+    return results
+
+
+# ── Output ────────────────────────────────────────────────────────────────────
+
+def render_text(results: list[FixResult], dry_run: bool, fixers: list[str], files_scanned: int) -> str:
+    mode = "DRY RUN — no files written" if dry_run else "changes applied in-place"
+    out = [f"# kb-fix  ({mode})", ""]
+
+    by_fixer: dict[str, list[FixResult]] = {}
+    for r in results:
+        by_fixer.setdefault(r.fixer, []).append(r)
+
+    total_changes = sum(r.changes for r in results)
+
+    for fixer in fixers:
+        items = by_fixer.get(fixer, [])
+        if not items:
+            continue
+        n = sum(r.changes for r in items)
+        out.append(f"## {fixer}  ({n} change{'s' if n != 1 else ''} in {len(items)} file{'s' if len(items) != 1 else ''})")
+        out.append("")
+        for r in items:
+            out.append(f"- `{r.file}`  ({r.changes})")
+            for s in r.preview:
+                out.append(f"    ↳ {s}")
+        out.append("")
+
+    out.append("## Summary")
+    out.append(f"- {files_scanned} files scanned")
+    out.append(f"- {total_changes} total change{'s' if total_changes != 1 else ''} across {len(results)} file{'s' if len(results) != 1 else ''}")
+    if not results:
+        out.append("- nothing to fix")
+    return "\n".join(out)
+
+
+def render_json(results: list[FixResult], dry_run: bool, files_scanned: int) -> str:
+    return json.dumps({
+        "dry_run": dry_run,
+        "files_scanned": files_scanned,
+        "total_changes": sum(r.changes for r in results),
+        "results": [asdict(r) for r in results],
+    }, indent=2)
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+def main() -> int:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--fix", metavar="FIXER",
+                   help=f"fixer to apply: {', '.join(ALL_FIXERS)}, or 'all'")
+    p.add_argument("--topic", help="restrict to one topic directory")
+    p.add_argument("--dry-run", action="store_true", help="preview changes without writing")
+    fmt = p.add_mutually_exclusive_group()
+    fmt.add_argument("--json", action="store_true")
+    args = p.parse_args()
+
+    root = resolve_kb_root()
+    if not root.is_dir():
+        print(f"kb-fix: KB root not found: {root}", file=sys.stderr)
+        return 2
+
+    # Resolve which fixers to run
+    if args.fix is None:
+        # List mode: scan with all fixers, show summary only
+        fixers = ALL_FIXERS
+    elif args.fix == "all":
+        fixers = ALL_FIXERS
+    elif args.fix in ALL_FIXERS:
+        fixers = [args.fix]
+    else:
+        print(f"kb-fix: unknown fixer '{args.fix}'. Choose from: {', '.join(ALL_FIXERS)}, all", file=sys.stderr)
+        return 2
+
+    paths = walk_kb(root, args.topic)
+    all_results: list[FixResult] = []
+
+    for path in paths:
+        rel = path.relative_to(root).as_posix()
+        # In list mode (no --fix given) always dry-run
+        dry = args.dry_run or args.fix is None
+        results = apply_fixers(path, rel, fixers, dry_run=dry)
+        all_results.extend(results)
+
+    if args.json:
+        print(render_json(all_results, args.dry_run or args.fix is None, len(paths)))
+    else:
+        if args.fix is None:
+            # List mode: show what would be fixed
+            print(render_text(all_results, dry_run=True, fixers=fixers, files_scanned=len(paths)))
+            print()
+            print("Run `kb-fix --fix <fixer>` or `kb-fix --fix all` to apply.")
+        else:
+            print(render_text(all_results, args.dry_run, fixers, len(paths)))
+
+    return 1 if all_results else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

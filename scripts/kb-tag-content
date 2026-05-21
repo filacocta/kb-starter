@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+# kb-tag-content — dispatch Gemini CLI agents to add content tags to KB stubs.
+#
+# Finds stubs with ≤3 tags (structural-only) across KB topics, then dispatches
+# Gemini agents (max 2 in parallel, per AG-2) to enrich them.
+#
+# Usage:
+#   kb-tag-content                    # process all topics (2 at a time)
+#   kb-tag-content --topic slug       # single topic
+#   kb-tag-content --dry-run          # list targets without dispatching
+#
+# Requires: gemini CLI on PATH, ~/.claude/kb-config.md with KB_ROOT
+
+set -euo pipefail
+
+AGENT_PROFILE="$HOME/.claude/skills/kb-tag-content/agent-profile.md"
+if [[ ! -f "$AGENT_PROFILE" ]]; then
+    # fallback: relative to kb-starter checkout
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    AGENT_PROFILE="$(dirname "$SCRIPT_DIR")/skills/kb-tag-content/agent-profile.md"
+fi
+
+# Read KB_ROOT from config
+KB_ROOT=""
+if [[ -f ~/.claude/kb-config.md ]]; then
+    KB_ROOT=$(grep -E '^KB_ROOT[: =]' ~/.claude/kb-config.md | head -1 | sed 's/^KB_ROOT[: =]*//' | tr -d '"'"'"' ')
+fi
+if [[ -z "$KB_ROOT" ]]; then
+    KB_ROOT="${KB_ROOT:-$HOME/Documents/vault/knowledgebase}"
+fi
+if [[ ! -d "$KB_ROOT" ]]; then
+    echo "error: KB not found at $KB_ROOT" >&2
+    exit 2
+fi
+
+TOPIC_ARG=""
+DRY_RUN=0
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --topic) TOPIC_ARG="$2"; shift 2 ;;
+        --dry-run) DRY_RUN=1; shift ;;
+        *) echo "Unknown arg: $1" >&2; exit 1 ;;
+    esac
+done
+
+# Find topics that have structural-only stubs
+find_stub_topics() {
+    KB_ROOT_ARG="$1"
+    python3 - "$KB_ROOT_ARG" << 'PYEOF'
+import re, yaml
+from pathlib import Path
+import sys
+
+KB = Path(sys.argv[1])
+FM_RE = re.compile(r'^---\s*\n(.*?)\n---\s*\n', re.DOTALL)
+
+STRUCTURAL = {'entity','concept','synthesis','source','note','reference','summary',
+              'impl-plan','meta','catalog','index','person','place','game','text',
+              'organization','organisation','software','event','creature','artifact',
+              'tool','book','project'}
+
+topics = {}
+for md in (KB / "topics").rglob("*.md"):
+    rel = str(md.relative_to(KB))
+    if any(p in rel for p in ['_','sources/','reading-list']):
+        continue
+    try:
+        text = md.read_text()
+        if 'This is a stub' not in text: continue
+        m = FM_RE.match(text)
+        if not m: continue
+        fm = yaml.safe_load(m.group(1)) or {}
+        tags = fm.get('tags', [])
+        if not isinstance(tags, list): continue
+        if len(tags) > 3: continue  # already content-tagged
+        topic = str(md.relative_to(KB)).split('/')[1]
+        topics.setdefault(topic, 0)
+        topics[topic] += 1
+    except: pass
+
+for t, n in sorted(topics.items(), key=lambda x: -x[1]):
+    print(f"{t}\t{n}")
+PYEOF
+}
+
+if [[ -n "$TOPIC_ARG" ]]; then
+    TOPICS=("$TOPIC_ARG")
+else
+    mapfile -t TOPICS < <(find_stub_topics "$KB_ROOT" 2>/dev/null | cut -f1)
+fi
+
+if [[ "${#TOPICS[@]}" -eq 0 ]]; then
+    echo "No topics with structural-only stubs found."
+    exit 0
+fi
+
+echo "Topics to process: ${#TOPICS[@]}"
+for t in "${TOPICS[@]}"; do
+    count=$(find_stub_topics "$KB_ROOT" 2>/dev/null | grep "^${t}" | cut -f2 || echo 0)
+    echo "  $t ($count stubs)"
+done
+
+if [[ $DRY_RUN -eq 1 ]]; then
+    echo "(dry-run — not dispatching)"
+    exit 0
+fi
+
+# Dispatch in pairs (AG-2: max 2 concurrent)
+dispatch_topic() {
+    local topic="$1"
+    echo "→ Dispatching Gemini agent for topic: $topic"
+    local prompt
+    prompt="$(cat "$AGENT_PROFILE")
+
+TOPIC=$topic
+KB_ROOT=$KB_ROOT"
+    cd "$KB_ROOT" && gemini --yolo --output-format text -p "$prompt" &
+    echo "  [PID $!] $topic"
+}
+
+i=0
+pids=()
+for topic in "${TOPICS[@]}"; do
+    dispatch_topic "$topic"
+    pids+=($!)
+    ((i++))
+    if (( i % 2 == 0 )); then
+        echo "  (waiting for pair to finish before next pair…)"
+        wait "${pids[-2]}" "${pids[-1]}" 2>/dev/null || true
+        echo "  (sleeping 8s between pairs)"
+        sleep 8
+    fi
+done
+
+# Wait for any remaining
+wait "${pids[@]}" 2>/dev/null || true
+echo ""
+echo "All Gemini agents complete."
+
+# Refresh the frontmatter cache so kb-search stays current
+echo "Refreshing kb-index cache…"
+kb-index --update 2>&1 | grep -v "^$" || true

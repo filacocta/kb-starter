@@ -1,0 +1,366 @@
+#!/usr/bin/env python3
+"""kb-tag — structural tag enrichment for the Obsidian KB.
+
+Adds structural tags derived from frontmatter fields (type, topic, entity-type)
+to notes that have `tags: []` or no `tags:` field at all. Notes with ANY
+existing non-empty tags are left untouched (idempotent).
+
+Tags derive from:
+  type:        → entity, concept, synthesis, source, note, reference, summary, impl-plan, …
+  topic:       → the slug verbatim (e.g. cellular-automata, folklore-and-bestiaries)
+  entity-type: → person, place, game, text, organization, software, event, creature
+  file path    → topic/project slug fallback when no `topic:` field
+
+Usage:
+  kb-tag                    dry-run, full KB
+  kb-tag --apply            write changes
+  kb-tag --scope topics     topics only
+  kb-tag --scope projects   projects only
+  kb-tag --verbose          per-file breakdown in dry-run
+
+Exit codes:
+  0 = clean (nothing to change)
+  1 = changes proposed / applied
+  2 = error
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import sys
+from pathlib import Path
+
+import yaml
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+
+
+def resolve_kb_root() -> Path:
+    """KB_ROOT env wins; else ~/.claude/kb-config.md; else default vault path."""
+    env_val = os.environ.get("KB_ROOT")
+    if env_val:
+        return Path(os.path.expanduser(env_val)).resolve()
+    kb_config = Path.home() / ".claude/kb-config.md"
+    if kb_config.exists():
+        for line in kb_config.read_text().splitlines():
+            line = line.strip()
+            if line.startswith("KB_ROOT:") or line.startswith("KB_ROOT="):
+                val = line.split(":", 1)[-1] if ":" in line else line.split("=", 1)[-1]
+                val = val.strip().strip('"').strip("'")
+                if val:
+                    return Path(os.path.expanduser(val)).resolve()
+    return (Path.home() / "Documents/vault/knowledgebase").resolve()
+
+# Notes we never touch.
+SKIP_FILENAMES = {
+    "_index.md", "_checkpoint.md", "_schema.md", "_rules.md",
+    "_dive-queue.md", "_todo.md", "_log.md", "_relink-report.md",
+    "_workflow-checklist.md", "_no-emojis.md", "_summary.md",
+    "reading-list.md", "LINKS.md", "README.md",
+}
+SKIP_DIR_PARTS = {".obsidian", ".git", ".trash", "bases", "sources"}
+SKIP_PATH_PREFIXES = ("topics/personal-notes/notes/daily/",)
+
+# Structural type → tag. Any unknown type: tag = the type value itself.
+TYPE_TAG_MAP: dict[str, str] = {
+    "entity": "entity",
+    "concept": "concept",
+    "synthesis": "synthesis",
+    "source": "source",
+    "note": "note",
+    "reference": "reference",
+    "summary": "summary",
+    "impl-plan": "impl-plan",
+    "meta": "meta",
+    "catalog": "catalog",
+    "index": "index",
+    "prospects": "prospects",
+}
+
+# entity-type → tag.
+ENTITY_TYPE_TAG_MAP: dict[str, str] = {
+    "person": "person",
+    "place": "place",
+    "game": "game",
+    "text": "text",
+    "organization": "organization",
+    "software": "software",
+    "event": "event",
+    "creature": "creature",
+    "artifact": "artifact",
+    "concept": "concept",
+    "tool": "tool",
+}
+
+# ---------------------------------------------------------------------------
+# Frontmatter
+# ---------------------------------------------------------------------------
+
+FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+
+
+_SIMPLE_FIELD_RE = re.compile(r"^([\w-]+):\s*(.+)$", re.MULTILINE)
+
+
+def split_frontmatter(text: str) -> tuple[dict, str, int]:
+    m = FRONTMATTER_RE.match(text)
+    if not m:
+        return ({}, text, 0)
+    raw = m.group(1)
+    try:
+        fm = yaml.safe_load(raw) or {}
+        if not isinstance(fm, dict):
+            fm = {}
+    except yaml.YAMLError:
+        # Fall back to regex extraction for the simple scalar fields we need.
+        fm = {}
+        for km in _SIMPLE_FIELD_RE.finditer(raw):
+            key, val = km.group(1), km.group(2).strip().strip('"').strip("'")
+            if key in ("type", "topic", "entity-type", "tags", "status", "title"):
+                fm[key] = val
+    return (fm, text[m.end():], m.end())
+
+
+def extract_existing_tags(fm: dict) -> list[str]:
+    raw = fm.get("tags")
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [str(t) for t in raw if t]
+    if isinstance(raw, str):
+        return [t.strip() for t in raw.replace(",", " ").split() if t.strip()]
+    return []
+
+
+# ---------------------------------------------------------------------------
+# Path filtering
+# ---------------------------------------------------------------------------
+
+
+def is_skipped(path: Path, kb_root: Path) -> bool:
+    rel = str(path.relative_to(kb_root))
+    parts = Path(rel).parts
+    if any(p in SKIP_DIR_PARTS for p in parts):
+        return True
+    if path.name in SKIP_FILENAMES or path.name.startswith("_"):
+        return True
+    if path.suffix == ".base":
+        return True
+    if any(rel.startswith(pfx) for pfx in SKIP_PATH_PREFIXES):
+        return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Tag derivation
+# ---------------------------------------------------------------------------
+
+
+def derive_structural_tags(fm: dict, path: Path, kb_root: Path) -> list[str]:
+    tags: list[str] = []
+
+    # type tag
+    type_val = str(fm.get("type", "")).strip()
+    if type_val:
+        tag = TYPE_TAG_MAP.get(type_val, type_val)
+        if tag:
+            tags.append(tag)
+
+    # topic tag — from frontmatter or path
+    topic_val = str(fm.get("topic", "")).strip()
+    if not topic_val:
+        # derive from path: topics/<slug>/... or projects/<slug>/...
+        rel_parts = path.relative_to(kb_root).parts
+        if len(rel_parts) >= 2 and rel_parts[0] in ("topics", "projects"):
+            topic_val = rel_parts[1]
+    if topic_val and topic_val not in tags:
+        tags.append(topic_val)
+
+    # entity-type tag
+    entity_type = str(fm.get("entity-type", "")).strip()
+    if entity_type:
+        tag = ENTITY_TYPE_TAG_MAP.get(entity_type, entity_type)
+        if tag and tag not in tags:
+            tags.append(tag)
+
+    return tags
+
+
+# ---------------------------------------------------------------------------
+# Tag application
+# ---------------------------------------------------------------------------
+
+
+def apply_tags(text: str, body_start: int, new_tags: list[str]) -> str:
+    """Insert or replace the tags: field in frontmatter."""
+    if not new_tags:
+        return text
+    fm_text = text[:body_start]
+    body = text[body_start:]
+
+    tag_line_m = re.search(r"(?m)^tags:\s*.*$", fm_text)
+    inline = ", ".join(new_tags)
+
+    if tag_line_m is None:
+        # No tags: line — insert before closing ---
+        close_m = re.search(r"\n---\s*\n", fm_text)
+        if close_m is None:
+            return text
+        insert_at = close_m.start() + 1
+        new_fm = fm_text[:insert_at] + f"tags: [{inline}]\n" + fm_text[insert_at:]
+        return new_fm + body
+
+    # Replace the existing (empty) tags line with populated one.
+    line_start = tag_line_m.start()
+    line_end = fm_text.find("\n", line_start)
+    if line_end == -1:
+        line_end = len(fm_text)
+    new_fm = fm_text[:line_start] + f"tags: [{inline}]" + fm_text[line_end:]
+    return new_fm + body
+
+
+def verify_yaml(text: str) -> bool:
+    m = FRONTMATTER_RE.match(text)
+    if not m:
+        return True
+    try:
+        result = yaml.safe_load(m.group(1))
+        return isinstance(result, dict)
+    except yaml.YAMLError:
+        return False
+
+
+def safe_write(path: Path, content: str, original_mtime_ns: int) -> bool:
+    try:
+        if path.stat().st_mtime_ns != original_mtime_ns:
+            print(f"warn: concurrent modification, skipping {path}", file=sys.stderr)
+            return False
+    except OSError:
+        return False
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    try:
+        tmp.write_text(content)
+        os.replace(tmp, path)
+        return True
+    except OSError as e:
+        print(f"warn: write failed for {path}: {e}", file=sys.stderr)
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+
+def collect_files(kb_root: Path, scope: str) -> list[Path]:
+    dirs: list[Path] = []
+    if scope in ("all", "topics"):
+        dirs.append(kb_root / "topics")
+    if scope in ("all", "projects"):
+        dirs.append(kb_root / "projects")
+    out: list[Path] = []
+    for d in dirs:
+        if not d.is_dir():
+            continue
+        for p in d.rglob("*.md"):
+            if not is_skipped(p, kb_root):
+                out.append(p)
+    return sorted(out)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--apply", action="store_true",
+                        help="Write changes (default: dry-run)")
+    parser.add_argument("--scope", choices=["all", "topics", "projects"],
+                        default="all",
+                        help="Which subtree to process (default: all)")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Show per-file tag assignments in dry-run")
+    parser.add_argument("--kb-root", default=None,
+                        help="KB vault root (default: KB_ROOT env or ~/.claude/kb-config.md)")
+    args = parser.parse_args()
+
+    kb_root = Path(args.kb_root) if args.kb_root else resolve_kb_root()
+    if not kb_root.is_dir():
+        print(f"error: KB not found at {kb_root}", file=sys.stderr)
+        return 2
+
+    files = collect_files(kb_root, args.scope)
+    print(f"Scanning {len(files)} files (scope={args.scope}, mode={'apply' if args.apply else 'dry-run'})…",
+          file=sys.stderr)
+
+    needs_tags: list[tuple[Path, list[str]]] = []
+    skipped_already_tagged = 0
+
+    for path in files:
+        try:
+            mtime_ns = path.stat().st_mtime_ns
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+
+        fm, _body, body_start = split_frontmatter(text)
+        if body_start == 0:
+            continue  # no frontmatter at all
+
+        existing = extract_existing_tags(fm)
+        if existing:
+            skipped_already_tagged += 1
+            continue
+
+        derived = derive_structural_tags(fm, path, kb_root)
+        if not derived:
+            continue
+
+        needs_tags.append((path, derived))
+        rel = str(path.relative_to(kb_root))
+
+        if args.apply:
+            candidate = apply_tags(text, body_start, derived)
+            if not verify_yaml(candidate):
+                print(f"warn: YAML would break in {rel}; skipped", file=sys.stderr)
+                continue
+            safe_write(path, candidate, mtime_ns)
+        elif args.verbose:
+            print(f"  {rel}")
+            print(f"    + {derived}")
+
+    # Summary
+    print(f"\nResults:")
+    print(f"  Files scanned:          {len(files)}")
+    print(f"  Already tagged (skip):  {skipped_already_tagged}")
+    print(f"  Need structural tags:   {len(needs_tags)}")
+    if args.apply:
+        print(f"  Tags written:           {len(needs_tags)}")
+        if needs_tags:
+            # Refresh the frontmatter cache so kb-search stays current
+            import subprocess
+            print("Refreshing kb-index cache…", file=sys.stderr)
+            subprocess.run(["kb-index", "--update"], check=False)
+    else:
+        print(f"  (dry-run — pass --apply to write)")
+
+    if not args.verbose and not args.apply and needs_tags:
+        print(f"\nTop 20 files that would be tagged:")
+        for path, tags in needs_tags[:20]:
+            rel = str(path.relative_to(kb_root))
+            print(f"  {rel}")
+            print(f"    + {tags}")
+        if len(needs_tags) > 20:
+            print(f"  … and {len(needs_tags) - 20} more (use --verbose for full list)")
+
+    return 1 if needs_tags else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

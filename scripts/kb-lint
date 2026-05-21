@@ -1,0 +1,671 @@
+#!/usr/bin/env python3
+"""kb-lint — structural health check for the Obsidian KB.
+
+Pure Python port of the /kb-lint skill. Produces a categorized report of:
+  - broken wikilinks
+  - missing required frontmatter
+  - orphan pages (not referenced by any wikilink or _summary)
+  - stale content (>N days since `updated:`)
+  - source-note tampering (mtime later than `ingested:`)
+  - structural issues (topics missing _summary, empty subdirs, dirs missing
+    from _index.md)
+
+No LLM call — pure walk + parse + classify.
+
+Usage:
+    kb-lint                    full scan, plain-text report
+    kb-lint --topic personal-notes   restrict to one topic
+    kb-lint --json             JSON output (for /app/api/* consumers)
+    kb-lint --md               markdown report
+    kb-lint --stale-days 14    override default 30d staleness threshold
+    kb-lint --no-orphans       skip orphan detection (slowest pass)
+
+Exit codes:
+    0 = clean (no errors, no warnings)
+    1 = warnings only
+    2 = errors
+
+Env:
+    KB_ROOT  Override KB path. Default: ~/Documents/{{VAULT_NAME}}/knowledgebase
+             (also reads ~/.claude/kb-config.md `KB_ROOT:` line).
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import re
+import sys
+from collections import defaultdict
+from dataclasses import dataclass, asdict, field
+from pathlib import Path
+
+WIKILINK_RE = re.compile(r"!?\[\[([^\]\n|]+)(?:\|[^\]\n]+)?\]\]")
+FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
+FENCED_CODE_RE = re.compile(r"^```.*?^```", re.DOTALL | re.MULTILINE)
+INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
+
+
+def resolve_kb_root() -> Path:
+    """KB_ROOT env wins; else ~/.claude/kb-config.md; else default vault path."""
+    env_val = os.environ.get("KB_ROOT")
+    if env_val:
+        return Path(os.path.expanduser(env_val)).resolve()
+    kb_config = Path.home() / ".claude/kb-config.md"
+    if kb_config.exists():
+        for line in kb_config.read_text().splitlines():
+            line = line.strip()
+            if line.startswith("KB_ROOT:") or line.startswith("KB_ROOT="):
+                val = line.split(":", 1)[-1] if ":" in line else line.split("=", 1)[-1]
+                val = val.strip().strip('"').strip("'")
+                if val:
+                    return Path(os.path.expanduser(val)).resolve()
+    return (Path.home() / "Documents/vault/knowledgebase").resolve()
+
+
+def strip_code(text: str) -> str:
+    """Replace fenced + inline code with whitespace of equal length so line
+    numbers stay aligned but wikilinks-inside-code don't get parsed."""
+    def blank(m):
+        # Preserve newlines so line numbers downstream stay correct
+        return "".join("\n" if c == "\n" else " " for c in m.group(0))
+    text = FENCED_CODE_RE.sub(blank, text)
+    text = INLINE_CODE_RE.sub(blank, text)
+    return text
+EXCLUDED_DIR_FRAGMENTS = ("/.obsidian/", "/.git/", "/.trash/")
+VALID_TYPES = {"summary", "source", "concept", "entity", "synthesis", "scan",
+               "meta", "todos", "catalog", "note", "index", "prospects",
+               "project-concept", "project-stub", "project-prototype",
+               "plan", "impl-plan", "reference"}
+REQUIRED_FRONTMATTER_FIELDS = ("type", "topic")
+# Link targets under these prefixes live outside the current KB structure
+# (planned essays, pre-reorganisation vault paths). Flag them as broken
+# is noise — skip them silently.
+SKIP_LINK_PREFIXES = ("essays/", "RPG/", "rpg/")
+
+
+@dataclass
+class Finding:
+    severity: str  # "error" | "warning" | "info"
+    category: str
+    file: str
+    message: str
+    line: int | None = None
+    context: str | None = None
+
+
+@dataclass
+class FileMeta:
+    path: Path
+    rel: str
+    frontmatter: dict
+    body: str
+    mtime: float
+    has_frontmatter: bool
+
+
+def parse_frontmatter(text: str) -> tuple[dict, str]:
+    """Return (frontmatter_dict, body). Frontmatter is YAML-ish; we use a
+    minimal parser that handles `key: value` plus simple list/object inline.
+    Avoids pyyaml dependency for portability."""
+    m = FRONTMATTER_RE.match(text)
+    if not m:
+        return {}, text
+    raw = m.group(1)
+    body = text[m.end():]
+    fm: dict = {}
+    current_key = None
+    for line in raw.split("\n"):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if line.startswith(" ") or line.startswith("\t"):
+            # continuation of a list — keep as raw
+            if current_key and isinstance(fm.get(current_key), list):
+                v = line.strip().lstrip("- ").strip()
+                if v:
+                    fm[current_key].append(v)
+            continue
+        if ":" in line:
+            k, _, v = line.partition(":")
+            k = k.strip()
+            v = v.strip()
+            current_key = k
+            if not v:
+                fm[k] = []
+            elif v.startswith("[") and v.endswith("]"):
+                inner = v[1:-1].strip()
+                fm[k] = [x.strip().strip("'\"") for x in inner.split(",") if x.strip()]
+            elif v.startswith('"') and v.endswith('"'):
+                fm[k] = v[1:-1]
+            elif v.startswith("'") and v.endswith("'"):
+                fm[k] = v[1:-1]
+            else:
+                fm[k] = v
+    return fm, body
+
+
+def walk_kb(root: Path, topic: str | None = None) -> list[Path]:
+    out: list[Path] = []
+    base = root / "topics" / topic if topic else root
+    for dirpath, dirnames, filenames in os.walk(base, followlinks=True):
+        dirnames[:] = [d for d in dirnames if d not in (".obsidian", ".git", ".trash")]
+        for fn in filenames:
+            if not fn.endswith(".md"):
+                continue
+            p = os.path.join(dirpath, fn)
+            if any(f in p for f in EXCLUDED_DIR_FRAGMENTS):
+                continue
+            out.append(Path(p))
+    return out
+
+
+def load_files(paths: list[Path], root: Path) -> list[FileMeta]:
+    metas: list[FileMeta] = []
+    for p in paths:
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+            st = p.stat()
+        except OSError:
+            continue
+        fm, body = parse_frontmatter(text)
+        metas.append(FileMeta(
+            path=p,
+            rel=p.relative_to(root).as_posix(),
+            frontmatter=fm,
+            body=body,
+            mtime=st.st_mtime,
+            has_frontmatter=bool(fm),
+        ))
+    return metas
+
+
+DATE_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}_(.+)$")
+
+
+def build_wikilink_index(metas: list[FileMeta]) -> dict[str, list[str]]:
+    """basename (without extension) → [rel paths]. For shortest-name resolution.
+
+    Also indexes date-stripped basenames: a file `2026-04-23_foo.md` is
+    findable both by `2026-04-23_foo` and by `foo` — matches Obsidian's
+    behavior where short wikilinks elide the date prefix.
+    """
+    idx: dict[str, list[str]] = defaultdict(list)
+    for m in metas:
+        stem = m.path.stem  # filename without .md
+        idx[stem].append(m.rel)
+        if stem.lower() != stem:
+            idx[stem.lower()].append(m.rel)
+        dm = DATE_PREFIX_RE.match(stem)
+        if dm:
+            stripped = dm.group(1)
+            idx[stripped].append(m.rel)
+            if stripped.lower() != stripped:
+                idx[stripped.lower()].append(m.rel)
+    return idx
+
+
+def resolve_wikilink(target: str, idx: dict[str, list[str]], all_rels: set[str], topic_names: set[str]) -> str | None:
+    """Resolve a wikilink target to a rel-path (or None if broken)."""
+    # Strip section + block refs
+    target = target.split("#")[0].strip()
+    if not target:
+        return None  # pure section ref like [[#heading]]
+    # Strip trailing backslash — Obsidian escapes | as \| inside markdown tables,
+    # so [[path\|display]] produces target="path\" from the regex capture group.
+    target = target.rstrip("\\")
+    # Strip trailing slash (folder references like [[topics/X/notes/syntheses/]])
+    target = target.rstrip("/")
+    if not target:
+        return None
+    # Strip .md if present
+    if target.endswith(".md"):
+        target = target[:-3]
+    # Strip leading slash if Obsidian's "from vault root" form
+    target = target.lstrip("/")
+    # Strip vault-absolute prefix — some links use [[knowledgebase/topics/...]]
+    # or [[KnowledgeBase/topics/...]] (case-insensitive vault name prefix).
+    if target.lower().startswith("knowledgebase/"):
+        target = target[len("knowledgebase/"):]
+
+    # Try exact rel-path match first (with .md added back)
+    candidate = target + ".md"
+    if candidate in all_rels:
+        return candidate
+    # Try as a path-relative match anywhere
+    matching = [r for r in all_rels if r == candidate or r.endswith("/" + candidate)]
+    if len(matching) == 1:
+        return matching[0]
+    if len(matching) > 1:
+        # Multiple matches — Obsidian picks shortest unique; ambiguous from our side
+        return matching[0]
+    # Topic-name reference: [[ai-models]] → topics/ai-models/_summary.md
+    if target in topic_names:
+        topic_summary = f"topics/{target}/_summary.md"
+        if topic_summary in all_rels:
+            return topic_summary
+    # Folder-prefixed topic reference: [[topics/large-language-models]] → topics/large-language-models/_summary.md
+    if target.startswith("topics/"):
+        topic_name = target[len("topics/"):]
+        if "/" not in topic_name and topic_name in topic_names:
+            topic_summary = f"topics/{topic_name}/_summary.md"
+            if topic_summary in all_rels:
+                return topic_summary
+    # Folder-prefixed project reference: [[projects/weatherstone]] → projects/weatherstone/_summary.md
+    if target.startswith("projects/"):
+        project_part = target[len("projects/"):]
+        if "/" not in project_part:
+            proj_summary = f"projects/{project_part}/_summary.md"
+            if proj_summary in all_rels:
+                return proj_summary
+    # Sub-topic reference: [[models/intruder-v5]] → topics/models/intruder-v5/_summary.md
+    if "/" in target:
+        sub_summary = f"topics/{target}/_summary.md"
+        if sub_summary in all_rels:
+            return sub_summary
+    # Bases reference: [[bases/X]] — bases live as .base files, not .md;
+    # treat as resolved if there's a bases/ directory present (we don't
+    # walk .base files but they do exist).
+    if target.startswith("bases/"):
+        return target  # accept; can't validate without scanning .base files
+    # Try basename lookup (Obsidian short wikilink)
+    stem = target.split("/")[-1]
+    hits = idx.get(stem) or idx.get(stem.lower())
+    if hits:
+        return hits[0]  # take first; Obsidian picks shortest
+    return None
+
+
+def _is_wikilink_infra_file(rel: str) -> bool:
+    """Files whose wikilinks we don't validate: planning/scratch/auto-gen.
+
+    Excludes _summary.md — those are structured content where broken links
+    ARE worth knowing about."""
+    basename = rel.split("/")[-1]
+    if basename == "_summary.md":
+        return False
+    if basename.startswith("_") or "_Index_of_" in basename:
+        return True
+    if rel.startswith("readinglist/") or rel.startswith("clippings/"):
+        return True
+    return False
+
+
+def lint_wikilinks(metas: list[FileMeta], idx: dict[str, list[str]], all_rels: set[str], topic_names: set[str]) -> list[Finding]:
+    findings: list[Finding] = []
+    for m in metas:
+        if _is_wikilink_infra_file(m.rel):
+            continue
+        body_no_code = strip_code(m.body)
+        for line_no, line in enumerate(body_no_code.split("\n"), start=1):
+            for match in WIKILINK_RE.finditer(line):
+                target = match.group(1).strip()
+                # Skip dataview / template tokens
+                if target.startswith("{") or target.startswith("$"):
+                    continue
+                # Image embeds with non-md extensions are media — skip
+                if "." in target.rsplit("/", 1)[-1] and not target.endswith(".md"):
+                    continue
+                # Skip known external / pre-migration path prefixes
+                if any(target.lower().startswith(p.lower()) for p in SKIP_LINK_PREFIXES):
+                    continue
+                resolved = resolve_wikilink(target, idx, all_rels, topic_names)
+                if resolved is None:
+                    findings.append(Finding(
+                        severity="error",
+                        category="broken_wikilink",
+                        file=m.rel,
+                        line=line_no,
+                        message=f"unresolved wikilink: [[{target}]]",
+                        context=line.strip()[:120],
+                    ))
+    return findings
+
+
+def _is_infrastructure_file(rel: str) -> bool:
+    """True for files that intentionally use a looser frontmatter schema."""
+    basename = rel.split("/")[-1]
+    # KB infrastructure files: _log.md, _schema.md, _rules.md, _dive-queue.md, etc.
+    if basename.startswith("_"):
+        return True
+    # Auto-generated vault index files (e.g. _Index_of_notes.md)
+    if "_Index_of_" in basename:
+        return True
+    # Raw clippings — captured verbatim, not structured notes
+    if rel.startswith("clippings/"):
+        return True
+    # Reading list — informal bookmark dumps, not structured notes
+    if rel.startswith("readinglist/"):
+        return True
+    return False
+
+
+def lint_frontmatter(metas: list[FileMeta]) -> list[Finding]:
+    findings: list[Finding] = []
+    for m in metas:
+        # Daily notes use a sparse frontmatter shape — skip strict check for them
+        if "/notes/daily/" in m.rel:
+            continue
+        # Infrastructure and auto-generated files exempt from strict schema
+        if _is_infrastructure_file(m.rel):
+            continue
+        if not m.has_frontmatter:
+            findings.append(Finding(
+                severity="error",
+                category="missing_frontmatter",
+                file=m.rel,
+                message="no YAML frontmatter at top of file",
+            ))
+            continue
+        for field_name in REQUIRED_FRONTMATTER_FIELDS:
+            if field_name not in m.frontmatter:
+                findings.append(Finding(
+                    severity="error",
+                    category="missing_frontmatter_field",
+                    file=m.rel,
+                    message=f"missing required frontmatter field: `{field_name}`",
+                ))
+        t = m.frontmatter.get("type")
+        if t and t not in VALID_TYPES:
+            findings.append(Finding(
+                severity="warning",
+                category="invalid_type",
+                file=m.rel,
+                message=f"frontmatter `type: {t}` is not one of {sorted(VALID_TYPES)}",
+            ))
+        # author is recommended but not required
+        if "author" not in m.frontmatter and "/notes/" in m.rel:
+            findings.append(Finding(
+                severity="info",
+                category="missing_author",
+                file=m.rel,
+                message="missing `author:` field (recommended for notes/)",
+            ))
+    return findings
+
+
+def lint_orphans(metas: list[FileMeta], idx: dict[str, list[str]], all_rels: set[str], topic_names: set[str],
+                 ref_metas: list[FileMeta] | None = None) -> list[Finding]:
+    """Find files not referenced by any wikilink, _summary, or _index.md.
+
+    ref_metas: files to walk when building the referenced set. Pass all_metas
+    in scoped mode so cross-topic links into the topic are counted.
+    """
+    if ref_metas is None:
+        ref_metas = metas
+    referenced: set[str] = set()
+    # Always-considered-referenced patterns
+    for m in ref_metas:
+        rel = m.rel
+        if rel.endswith("_summary.md") or rel.endswith("_index.md") or rel.endswith("README.md"):
+            referenced.add(rel)
+        if "/notes/daily/" in rel:
+            referenced.add(rel)  # daily notes are series-referenced, not link-referenced
+        if rel.endswith("mark-todos.md") or rel.endswith("/reading-list.md"):
+            referenced.add(rel)
+    # Walk every file's wikilinks; mark targets referenced
+    for m in ref_metas:
+        for match in WIKILINK_RE.finditer(strip_code(m.body)):
+            target = match.group(1).strip()
+            resolved = resolve_wikilink(target, idx, all_rels, topic_names)
+            if resolved:
+                referenced.add(resolved)
+    # Findings: source/concept/synthesis/entity not in `referenced`
+    findings: list[Finding] = []
+    for m in metas:
+        if m.rel in referenced:
+            continue
+        if _is_infrastructure_file(m.rel):
+            continue
+        t = m.frontmatter.get("type")
+        if t in ("summary",):
+            continue
+        # Don't flag staging / scratch / inbox / scan files
+        if any(s in m.rel for s in ("/_pilot-", "/_staging-", "/_dive-queue", "/scans/", "_research-inbox/")):
+            continue
+        findings.append(Finding(
+            severity="warning",
+            category="orphan",
+            file=m.rel,
+            message="not referenced by any wikilink or index",
+        ))
+    return findings
+
+
+def lint_staleness(metas: list[FileMeta], stale_days: int) -> list[Finding]:
+    findings: list[Finding] = []
+    today = dt.date.today()
+    for m in metas:
+        upd = m.frontmatter.get("updated")
+        if not upd:
+            continue
+        try:
+            d = dt.date.fromisoformat(str(upd).strip())
+        except ValueError:
+            continue
+        age = (today - d).days
+        if age > stale_days:
+            # Don't flag daily notes or auto-generated content
+            if "/notes/daily/" in m.rel:
+                continue
+            if "automation-" in m.rel:
+                continue
+            findings.append(Finding(
+                severity="warning",
+                category="stale",
+                file=m.rel,
+                message=f"updated {age} days ago (>{stale_days}d threshold)",
+            ))
+    return findings
+
+
+def lint_source_immutability(metas: list[FileMeta]) -> list[Finding]:
+    """Source notes' mtime should be ~= their `ingested:` date."""
+    findings: list[Finding] = []
+    for m in metas:
+        if m.frontmatter.get("type") != "source":
+            continue
+        ing = m.frontmatter.get("ingested")
+        if not ing:
+            continue
+        try:
+            ing_d = dt.date.fromisoformat(str(ing).strip())
+        except ValueError:
+            continue
+        mtime_d = dt.date.fromtimestamp(m.mtime)
+        if (mtime_d - ing_d).days > 1:
+            findings.append(Finding(
+                severity="warning",
+                category="source_modified",
+                file=m.rel,
+                message=f"source ingested {ing_d}, file modified {mtime_d} ({(mtime_d - ing_d).days} days later)",
+            ))
+    return findings
+
+
+def lint_topic_structure(root: Path, topic_filter: str | None) -> list[Finding]:
+    findings: list[Finding] = []
+    topics_dir = root / "topics"
+    if not topics_dir.is_dir():
+        return findings
+    topics = [t for t in topics_dir.iterdir() if t.is_dir() and not t.name.startswith(".")]
+    if topic_filter:
+        topics = [t for t in topics if t.name == topic_filter]
+    for t in topics:
+        rel_topic = t.relative_to(root).as_posix()
+        if not (t / "_summary.md").is_file():
+            findings.append(Finding(
+                severity="error",
+                category="missing_summary",
+                file=rel_topic,
+                message="topic is missing _summary.md",
+            ))
+    return findings
+
+
+UNRENDERED_MATH_LINE_RE = re.compile(r'LaTeX:\s*`[^`]*\\[^`]+`')
+# Matches any individual backtick span containing a backslash (LaTeX command)
+BACKTICK_BACKSLASH_RE = re.compile(r'`[^`]*\\[^`]*`')
+
+
+def lint_unrendered_math(metas: list[FileMeta]) -> list[Finding]:
+    """Flag backtick-wrapped LaTeX commands that should use $...$ or $$...$$ in Obsidian OFM.
+
+    Two patterns:
+    1. 'LaTeX: `\\cmd`' standalone label lines (anywhere in body)
+    2. Table rows containing `\\cmd` backtick spans (LaTeX column cells)
+
+    Backtick spans render as monospace code in Obsidian, not as MathJax.
+    """
+    findings: list[Finding] = []
+    for m in metas:
+        # Strip fenced code blocks only — inline code spans must remain visible
+        body_no_fenced = FENCED_CODE_RE.sub(
+            lambda match: "".join("\n" if c == "\n" else " " for c in match.group(0)),
+            m.body,
+        )
+        for line_no, line in enumerate(body_no_fenced.split("\n"), start=1):
+            if UNRENDERED_MATH_LINE_RE.search(line):
+                findings.append(Finding(
+                    severity="warning",
+                    category="unrendered_math",
+                    file=m.rel,
+                    line=line_no,
+                    message="LaTeX command in backtick span — use $...$ (inline) or $$...$$ (block) for rendered math",
+                    context=line.strip()[:120],
+                ))
+            elif line.startswith("|"):
+                # Use split-based pairing: odd-indexed parts are inside backtick spans.
+                # Only flag \letter patterns (LaTeX commands like \exp, \frac) — not
+                # \| (escaped pipe), \. (regex metachar), or other non-command escapes.
+                bt_parts = line.split("`")
+                if any(re.search(r"\\[a-zA-Z]", bt_parts[i])
+                       and not bt_parts[i].startswith("$")   # already dollar-wrapped = intentional syntax doc
+                       for i in range(1, len(bt_parts), 2)):
+                    findings.append(Finding(
+                        severity="warning",
+                        category="unrendered_math",
+                        file=m.rel,
+                        line=line_no,
+                        message="table cell contains LaTeX in backtick span — use $...$ for rendered math",
+                        context=line.strip()[:120],
+                    ))
+    return findings
+
+
+# --- output ---------------------------------------------------------------
+
+def render_text(findings: list[Finding], stats: dict) -> str:
+    out = [f"# KB Lint: {stats['kb_root']}", ""]
+    by_sev: dict[str, list[Finding]] = {"error": [], "warning": [], "info": []}
+    for f in findings:
+        by_sev.setdefault(f.severity, []).append(f)
+    for sev in ("error", "warning", "info"):
+        items = by_sev.get(sev, [])
+        if not items:
+            continue
+        out.append(f"## {sev.title()}s ({len(items)})")
+        out.append("")
+        by_cat: dict[str, list[Finding]] = defaultdict(list)
+        for f in items:
+            by_cat[f.category].append(f)
+        for cat in sorted(by_cat):
+            out.append(f"### {cat} ({len(by_cat[cat])})")
+            out.append("")
+            for f in by_cat[cat][:25]:  # cap per-category for readability
+                loc = f"{f.file}:{f.line}" if f.line else f.file
+                out.append(f"- `{loc}` — {f.message}")
+                if f.context:
+                    out.append(f"    ↳ `{f.context}`")
+            if len(by_cat[cat]) > 25:
+                out.append(f"  …and {len(by_cat[cat]) - 25} more")
+            out.append("")
+    out.append("## Summary")
+    out.append(f"- {stats['files_scanned']} md files scanned")
+    out.append(f"- {by_sev.get('error', []).__len__()} errors, "
+               f"{by_sev.get('warning', []).__len__()} warnings, "
+               f"{by_sev.get('info', []).__len__()} info")
+    return "\n".join(out)
+
+
+def render_json(findings: list[Finding], stats: dict) -> str:
+    return json.dumps({
+        "scanned_at": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
+        "kb_root": stats["kb_root"],
+        "files_scanned": stats["files_scanned"],
+        "summary": {
+            "errors": sum(1 for f in findings if f.severity == "error"),
+            "warnings": sum(1 for f in findings if f.severity == "warning"),
+            "info": sum(1 for f in findings if f.severity == "info"),
+        },
+        "findings": [asdict(f) for f in findings],
+    }, indent=2)
+
+
+# --- main -----------------------------------------------------------------
+
+def main() -> int:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--topic", help="restrict scan to one topic dir")
+    p.add_argument("--stale-days", type=int, default=30, help="staleness threshold for `updated:` field (default 30)")
+    p.add_argument("--no-orphans", action="store_true", help="skip orphan detection (slowest pass)")
+    p.add_argument("--no-stale", action="store_true", help="skip staleness check")
+    fmt = p.add_mutually_exclusive_group()
+    fmt.add_argument("--json", action="store_true")
+    fmt.add_argument("--md", action="store_true")
+    p.add_argument("--errors-only", action="store_true", help="exit 1 only on errors, not warnings")
+    args = p.parse_args()
+
+    root = resolve_kb_root()
+    if not root.is_dir():
+        print(f"kb-lint: KB root not found: {root}", file=sys.stderr)
+        return 3
+
+    # Always load the full KB for index/resolution; scope only the report targets.
+    all_metas = load_files(walk_kb(root), root)
+    all_rels = {m.rel for m in all_metas}
+    idx = build_wikilink_index(all_metas)
+
+    topics_dir = root / "topics"
+    topic_names: set[str] = set()
+    if topics_dir.is_dir():
+        topic_names = {t.name for t in topics_dir.iterdir() if t.is_dir() and not t.name.startswith(".")}
+
+    if args.topic:
+        scoped_paths = walk_kb(root, args.topic)
+        metas = load_files(scoped_paths, root)
+    else:
+        metas = all_metas
+
+    findings: list[Finding] = []
+    findings.extend(lint_wikilinks(metas, idx, all_rels, topic_names))
+    findings.extend(lint_frontmatter(metas))
+    if not args.no_orphans:
+        findings.extend(lint_orphans(metas, idx, all_rels, topic_names, ref_metas=all_metas))
+    if not args.no_stale:
+        findings.extend(lint_staleness(metas, args.stale_days))
+    findings.extend(lint_source_immutability(metas))
+    findings.extend(lint_topic_structure(root, args.topic))
+    findings.extend(lint_unrendered_math(metas))
+
+    stats = {
+        "kb_root": str(root),
+        "files_scanned": len(metas),
+    }
+
+    if args.json:
+        print(render_json(findings, stats))
+    else:
+        print(render_text(findings, stats))
+
+    n_err = sum(1 for f in findings if f.severity == "error")
+    n_warn = sum(1 for f in findings if f.severity == "warning")
+    if n_err:
+        return 2
+    if n_warn and not args.errors_only:
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
