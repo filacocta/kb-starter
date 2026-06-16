@@ -8,7 +8,7 @@ You are updating the KB to reflect the work just completed.
 
 ## KB Location
 
-KB root: `/path/to/your/vault/knowledgebase/`
+At startup, read `~/.claude/kb-config.md` to get `KB_ROOT` (the KB root path) and `VAULT_NAME`. If that file does not exist, stop and tell the user to create it — see the kb-starter README.
 
 **Context:** $ARGUMENTS
 

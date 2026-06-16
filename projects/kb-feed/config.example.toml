@@ -1,0 +1,15 @@
+kb_root = "~/Vault/knowledgebase"
+state_dir = "~/.local/state/kb-feed"
+allowed_chat_id = 0
+allowed_users = []
+log_level = "INFO"
+commit_debounce_seconds = 300
+commit_max_pending = 20
+git_user_name = "kb-bot"
+git_user_email = "noreply@kb-feed.local"
+
+# Disabled by default. Enable only for trusted topic lanes where URL-first
+# Telegram messages should go straight to topics/<slug>/reading-list.md
+# under ## Auto-approved.
+# [lanes.example-topic]
+# auto_approve = true

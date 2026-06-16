@@ -4,6 +4,8 @@ created: 2026-04-10
 modified: 2026-04-10
 type: summary
 topic: obsidian
+title: Obsidian
+description: Starter topic for Obsidian, the local-first Markdown knowledge-management app used as the KB storage and reading layer.
 tags: ["obsidian", "pkm", "markdown", "plugins", "automation"]
 ---
 
@@ -17,26 +19,26 @@ This topic documents Obsidian — the local-first, Markdown-based knowledge mana
 
 ## Key Concepts
 
-- [[notes/concepts/obsidian-overview]] — what Obsidian is; core philosophy (local-first, plain-text, extensible); vault structure
-- [[notes/concepts/obsidian-markdown]] — full OFM reference: CommonMark + GFM + LaTeX + Obsidian extensions (highlights, callouts, wikilinks, embeds, comments)
-- [[notes/concepts/obsidian-internal-links]] — wikilink system in depth: whole-note, heading, and block links; transclusion; display text; graph implications
-- [[notes/concepts/obsidian-uri-protocol]] — `obsidian://` deep-link protocol; all six core actions; URI encoding; how KB citations are generated
-- [[notes/concepts/obsidian-dataview]] — Dataview plugin: vault-as-database; DQL queries; TABLE/LIST/TASK/CALENDAR; DataviewJS
-- [[notes/concepts/obsidian-cli]] — CLI tool for terminal-based vault control (stub — docs not yet ingested)
-- [[notes/concepts/obsidian-plugins]] — plugin ecosystem: core plugins, key community plugins (Dataview, Git, Templater, Leaflet, Linter, Web Clipper)
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-overview]] — what Obsidian is; core philosophy (local-first, plain-text, extensible); vault structure
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-markdown]] — full OFM reference: CommonMark + GFM + LaTeX + Obsidian extensions (highlights, callouts, wikilinks, embeds, comments)
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-internal-links]] — wikilink system in depth: whole-note, heading, and block links; transclusion; display text; graph implications
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-uri-protocol]] — `obsidian://` deep-link protocol; all six core actions; URI encoding; how KB citations are generated
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-dataview]] — Dataview plugin: vault-as-database; DQL queries; TABLE/LIST/TASK/CALENDAR; DataviewJS
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-cli]] — CLI tool for terminal-based vault control (stub — docs not yet ingested)
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-plugins]] — plugin ecosystem: core plugins, key community plugins (Dataview, Git, Templater, Leaflet, Linter, Web Clipper)
 
 ## Synthesis
 
-- [[notes/syntheses/using-obsidian-strategies]] — expanding collection of Obsidian use cases organised by goal: KB system, TTRPG prep, Zettelkasten, research writing, project management, GTD
+- [[knowledgebase/topics/obsidian/notes/syntheses/using-obsidian-strategies]] — expanding collection of Obsidian use cases organised by goal: KB system, TTRPG prep, Zettelkasten, research writing, project management, GTD
 
 ## Sources
 
-- [[sources/2026-04-10-obsidian-help-overview]] — Obsidian Help home page overview
-- [[sources/2026-04-10-obsidian-basic-formatting]] — Basic formatting syntax reference
-- [[sources/2026-04-10-obsidian-flavored-markdown]] — OFM specification
-- [[sources/2026-04-10-obsidian-internal-links]] — Internal links documentation
-- [[sources/2026-04-10-obsidian-uri]] — Obsidian URI protocol documentation
-- [[sources/2026-04-10-phd20-dungeon-map-obsidian]] — [PHD20: Quick Dungeon Map Prep](https://phd20.com/blog/quick-dungeon-map-prep-obsidian/) — TTRPG strategy using Leaflet plugin
+- [[knowledgebase/topics/obsidian/sources/2026-04-10-obsidian-help-overview]] — Obsidian Help home page overview
+- [[knowledgebase/topics/obsidian/sources/2026-04-10-obsidian-basic-formatting]] — Basic formatting syntax reference
+- [[knowledgebase/topics/obsidian/sources/2026-04-10-obsidian-flavored-markdown]] — OFM specification
+- [[knowledgebase/topics/obsidian/sources/2026-04-10-obsidian-internal-links]] — Internal links documentation
+- [[knowledgebase/topics/obsidian/sources/2026-04-10-obsidian-uri]] — Obsidian URI protocol documentation
+- [[knowledgebase/topics/obsidian/sources/2026-04-10-phd20-dungeon-map-obsidian]] — [PHD20: Quick Dungeon Map Prep](https://phd20.com/blog/quick-dungeon-map-prep-obsidian/) — TTRPG strategy using Leaflet plugin
 
 ## Gaps & Open Questions
 

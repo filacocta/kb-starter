@@ -18,7 +18,7 @@ After a dev rebuild, reload the plugin in Obsidian: Settings → Community Plugi
 
 ## KB System
 
-This plugin is the foundation for a broader knowledge base system. The KB lives at `knowledgebase/` in the parent vault. Six Claude Code skills drive KB operations (installed to `~/.claude/skills/` via `skills/install.sh` in the repo root):
+This plugin is the foundation for a broader knowledge base system. The KB lives at `knowledgebase/` in the parent vault. KB skills drive KB operations (installed to `~/.claude/skills/` via `skills/install.sh` in the repo root):
 
 - `/kb-ask` — scoped conversational session over a topic; reads summaries first, generates `obsidian://` citations
 - `/kb-ingest <url|path>` — ingests a single URL or PDF interactively; fetches, assigns topic, writes source note, updates reading list/summary/index, full checkpoint support

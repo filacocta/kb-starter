@@ -8,8 +8,8 @@ title: "Using Obsidian — Strategies and Goals"
 description: "This synthesis note collects different strategies for using Obsidian, organised by goal."
 status: draft
 tags: ["obsidian", "strategy", "use-case", "workflow", "pkm"]
-sources: ["[[sources/2026-04-10-obsidian-help-overview]]", "[[sources/2026-04-10-phd20-dungeon-map-obsidian]]"]
-related: ["[[notes/concepts/obsidian-overview]]", "[[notes/concepts/obsidian-plugins]]", "[[notes/concepts/obsidian-dataview]]", "[[notes/concepts/obsidian-internal-links]]"]
+sources: ["[[knowledgebase/topics/obsidian/sources/2026-04-10-obsidian-help-overview]]", "[[knowledgebase/topics/obsidian/sources/2026-04-10-phd20-dungeon-map-obsidian]]"]
+related: ["[[knowledgebase/topics/obsidian/notes/concepts/obsidian-overview]]", "[[knowledgebase/topics/obsidian/notes/concepts/obsidian-plugins]]", "[[knowledgebase/topics/obsidian/notes/concepts/obsidian-dataview]]", "[[knowledgebase/topics/obsidian/notes/concepts/obsidian-internal-links]]"]
 ---
 
 # Using Obsidian — Strategies and Goals
@@ -29,7 +29,7 @@ This synthesis note collects different strategies for using Obsidian, organised 
 - `_dive-queue.md` for tracking rabbit holes across sessions
 - `_log.md` for append-only operation history
 
-**Key plugins:** [[notes/concepts/obsidian-dataview|Dataview]] for live queries, Obsidian Git for safety and distribution, Linter for frontmatter enforcement.
+**Key plugins:** [[knowledgebase/topics/obsidian/notes/concepts/obsidian-dataview|Dataview]] for live queries, Obsidian Git for safety and distribution, Linter for frontmatter enforcement.
 
 **Key skills:** `/kb-ingest`, `/kb-ask`, `/kb-queue`, `/kb-auto`
 
@@ -43,7 +43,7 @@ This synthesis note collects different strategies for using Obsidian, organised 
 
 **Goal:** Manage tabletop RPG campaign materials — maps, NPCs, locations, rules references, adventure sourcebooks — as a navigable linked system.
 
-**Source:** [Quick Dungeon Map Prep in Obsidian — PHD20](https://phd20.com/blog/quick-dungeon-map-prep-obsidian/) [[sources/2026-04-10-phd20-dungeon-map-obsidian]]
+**Source:** [Quick Dungeon Map Prep in Obsidian — PHD20](https://phd20.com/blog/quick-dungeon-map-prep-obsidian/) [[knowledgebase/topics/obsidian/sources/2026-04-10-phd20-dungeon-map-obsidian]]
 
 **Core technique:** Use the **[Leaflet](https://obsidian.md/plugins/obsidian-leaflet-plugin)** community plugin to render dungeon/world map images as interactive maps with clickable markers. Each marker links to a note, image, or PDF page.
 
@@ -66,7 +66,7 @@ This synthesis note collects different strategies for using Obsidian, organised 
 
 *Stub — no source ingested yet. Key concepts: atomic notes (one idea per note), permanent notes vs. fleeting notes, literature notes as source summaries, evergreen notes as distilled ideas. Recommend ingesting: Sönke Ahrens, "How to Take Smart Notes" or the Zettelkasten.de documentation.*
 
-**Relevant Obsidian features:** Graph view for seeing clusters, [[notes/concepts/obsidian-internal-links|wikilinks]] as the connective tissue, [[notes/concepts/obsidian-dataview|Dataview]] for finding orphan notes.
+**Relevant Obsidian features:** Graph view for seeing clusters, [[knowledgebase/topics/obsidian/notes/concepts/obsidian-internal-links|wikilinks]] as the connective tissue, [[knowledgebase/topics/obsidian/notes/concepts/obsidian-dataview|Dataview]] for finding orphan notes.
 
 ---
 
@@ -103,7 +103,7 @@ When ingesting a new source about Obsidian use cases, append a new entry here fo
 
 **Goal:** [one sentence]
 
-**Source:** [link] [[sources/...]]
+**Source:** [link] [[knowledgebase/topics/obsidian/...]]
 
 **Core technique:** [description]
 

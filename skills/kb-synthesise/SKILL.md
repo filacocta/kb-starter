@@ -42,9 +42,9 @@ Then read every source note in `topics/<topic>/sources/`. For each note, extract
 - Title of the source
 - All concepts mentioned (proper-noun ideas, named algorithms, named models, named theorems, named phenomena)
 - All entities mentioned (people, organisations, tools, projects, games)
-- Any wikilinks already used in the source note (e.g. `[[notes/concepts/...]]`)
+- Any wikilinks already used in the source note (e.g. `[[knowledgebase/topics/<topic-slug>/notes/concepts/...]]`)
 
-Build two inventories:
+Build three inventories:
 
 **Concept inventory** — for each distinct concept:
 ```
@@ -59,6 +59,18 @@ Build two inventories:
   Sources: [source-slug-1, ...]
   Existing note: yes/no
 ```
+
+**Media inventory** — for each captured-or-discovered media item referenced in any source's `media:` frontmatter block:
+```
+- <media-id-short>: <descriptor>
+  Kind: image | video | audio
+  Status: captured | discovered | not-captured
+  Sources: [source-slug-1, ...]
+  Description note: yes (path) / no (would need stub)
+  Central to: [concept-or-entity-slug, ...] (best guess — refined in Phase 3)
+```
+
+Media-description notes are mutable (OCR, vision description, and transcript sections can be enriched over time), but the synthesis pass does NOT fill those fields — it only embeds and cross-links. See Edge Cases below.
 
 ---
 
@@ -107,6 +119,14 @@ Present the plan to the user before writing anything:
 > | Note | What it covers | Path |
 > |---|---|---|
 > | EA landscape navigation | How fitness landscapes determine which EA strategies work | `notes/syntheses/ea-landscape-navigation.md` |
+>
+> ### Media to surface
+> Existing media-description notes that should be embedded inline in (or linked from) the new articles. Embed when the media depicts the article's primary subject; link only when peripheral:
+>
+> | Media | Kind | Central to | Action |
+> |---|---|---|---|
+> | cordaro-forecast-success-graph | image | `forecast-success-score` | embed inline + add to `related:` |
+> | example-peripheral-diagram | image | `some-concept` | link from `## See Also` only |
 >
 > ### Existing notes to update with backlinks
 > These notes already exist and should have backlinks appended (append-only):
@@ -189,8 +209,8 @@ title: "<Concept Name>"
 description: "<One sentence: what this concept is and why it matters.>"
 status: draft
 tags: ["<tag1>", "<tag2>"]
-sources: ["[[sources/<source-1>]]", "[[sources/<source-2>]]"]
-related: ["[[notes/concepts/<related>]]", "[[notes/entities/<related>]]"]
+sources: ["[[knowledgebase/topics/<topic-slug>/sources/<source-1>]]", "[[knowledgebase/topics/<topic-slug>/sources/<source-2>]]"]
+related: ["[[knowledgebase/topics/<topic-slug>/notes/concepts/<related>]]", "[[knowledgebase/topics/<topic-slug>/notes/entities/<related>]]"]
 ---
 
 # <Concept Name>
@@ -199,25 +219,26 @@ related: ["[[notes/concepts/<related>]]", "[[notes/entities/<related>]]"]
 
 ## <Section>
 
-<Prose, not bullet dumps. 2–5 paragraphs per major aspect. Use $...$ inline and $$...$$ block LaTeX for any mathematical content. Wikilink to related concepts: [[notes/concepts/related-slug]]. Cite sources inline: [[sources/source-slug]].>
+<Prose, not bullet dumps. 2–5 paragraphs per major aspect. Use $...$ inline and $$...$$ block LaTeX for any mathematical content. Wikilink to related concepts: [[knowledgebase/topics/<topic-slug>/notes/concepts/related-slug]]. Cite sources inline: [[knowledgebase/topics/<topic-slug>/sources/source-slug]].>
 
 ## See Also
 
-- [[notes/concepts/related-a]] — brief reason
-- [[notes/entities/entity-name]] — brief reason
+- [[knowledgebase/topics/<topic-slug>/notes/concepts/related-a]] — brief reason
+- [[knowledgebase/topics/<topic-slug>/notes/entities/entity-name]] — brief reason
 ```
 
 **Quality rules:**
 - One central concept per note. If you find yourself writing about two distinct things, split into two notes.
-- Every factual claim must trace to a `[[sources/...]]` wikilink.
+- Every factual claim must trace to a `[[knowledgebase/topics/<topic-slug>/sources/...]]` wikilink.
 - Link only the first occurrence of each concept per section.
 - Prose, not bullet dumps — write as an encyclopaedia article, not a list.
 - Bold the concept name on first use; bold other key terms on first introduction.
 - LaTeX for all mathematical/symbolic content.
 - `status: draft` on creation.
+- If a captured media-description note is central to this concept (depicts its primary subject), embed it inline below the introductory paragraph using `![[<local_path>|<caption>]]` (use the `local_path` value from the media-description note's frontmatter) and add `[[knowledgebase/topics/<topic-slug>/notes/media/<slug>]]` to `related:`. Peripheral media should be linked from `## See Also` instead. Use judgment — overdoing embeds makes articles noisy.
 
 **Contradiction handling:** If two sources contradict each other on a point, note it explicitly:
-> ⚠️ **Contradiction:** [[sources/source-a]] states X; [[sources/source-b]] states Y. This may reflect [different definitions / different contexts / a genuine dispute]. See `_discussion.md` for notes.
+> ⚠️ **Contradiction:** [[knowledgebase/topics/<topic-slug>/sources/source-a]] states X; [[knowledgebase/topics/<topic-slug>/sources/source-b]] states Y. This may reflect [different definitions / different contexts / a genuine dispute]. See `_discussion.md` for notes.
 
 ---
 
@@ -236,7 +257,7 @@ title: "<Concept Name>"
 description: "<One sentence definition.>"
 status: draft
 tags: ["<tag>"]
-sources: ["[[sources/<source-slug>]]"]
+sources: ["[[knowledgebase/topics/<topic-slug>/sources/<source-slug>]]"]
 related: []
 ---
 
@@ -246,7 +267,7 @@ related: []
 
 *This is a stub. A full article will be written once this concept appears in two or more sources.*
 
-**Source:** [[sources/<source-slug>]]
+**Source:** [[knowledgebase/topics/<topic-slug>/sources/<source-slug>]]
 ```
 
 ---
@@ -266,7 +287,7 @@ title: "<Entity Name>"
 description: "<One sentence: who/what this entity is and why it is relevant to this topic.>"
 status: draft
 tags: ["<tag>"]
-sources: ["[[sources/<source-slug>]]"]
+sources: ["[[knowledgebase/topics/<topic-slug>/sources/<source-slug>]]"]
 related: []
 ---
 
@@ -285,8 +306,10 @@ related: []
 
 ## See Also
 
-- [[notes/concepts/...]] — brief reason
+- [[knowledgebase/topics/<topic-slug>/notes/concepts/...]] — brief reason
 ```
+
+The same media-embed rule applies as for concept notes: if a captured media-description note depicts the entity's primary subject (a portrait, screenshot of their tool, etc.), embed `![[<local_path>|<caption>]]` inline and add the media-description note to `related:`. Peripheral media links from `## See Also` only.
 
 ---
 
@@ -305,8 +328,8 @@ title: "<Synthesis Title>"
 description: "<One sentence: what cross-cutting question or comparison this note addresses.>"
 status: draft
 tags: ["<tag>"]
-sources: ["[[sources/...]]", "[[sources/...]]"]
-related: ["[[notes/concepts/...]]"]
+sources: ["[[knowledgebase/topics/<topic-slug>/sources/...]]", "[[knowledgebase/topics/<topic-slug>/sources/...]]"]
+related: ["[[knowledgebase/topics/<topic-slug>/notes/concepts/...]]"]
 ---
 
 # <Synthesis Title>
@@ -331,7 +354,7 @@ When an existing note should link to a new note, **append only** — never rewri
 Check the authorship guard first (`author: kb-bot` must be present). Then append to the `## See Also` section (or add one if missing):
 
 ```markdown
-- [[notes/concepts/<new-note>]] — brief reason for the link
+- [[knowledgebase/topics/<topic-slug>/notes/concepts/<new-note>]] — brief reason for the link
 ```
 
 ---
@@ -344,6 +367,7 @@ After all notes are written:
    - Update the **Key Concepts** section to list the new notes with wikilinks
    - Update the note count in the footer line
    - Add a **Gaps & Open Questions** entry if synthesis revealed coverage holes
+   - If captured-or-discovered media exists for this topic, add or refresh a **Media** subsection listing each media-description note (`[[knowledgebase/topics/<topic-slug>/notes/media/<slug>]] — one-line description, status: captured | discovered | not-captured`). Order: captured first, then discovered, then not-captured.
 
 2. **Update `_index.md`:**
    - Update the note count for this topic in the Topics table
@@ -406,4 +430,10 @@ Always use LaTeX. The concept note should include the formal statement of the th
 Promote it to a full article by rewriting it (stub→full is an exception to the append-only rule, since the stub is intended to be replaced). Update `status: draft` and expand the content. Log the promotion.
 
 **Cross-topic canonical concept (e.g. "neural network" appears in both LLM and EA topics):**
-Check if a canonical note already exists in another topic. If yes: create a lightweight note in the current topic that says "See canonical note at [[topics/<other-topic>/notes/concepts/<slug>]]." If no canonical note exists yet, write the full article in the topic where it is most central, and create a stub in the other topic that links to it.
+Check if a canonical note already exists in another topic. If yes: create a lightweight note in the current topic that says "See canonical note at [[knowledgebase/topics/<other-topic>/notes/concepts/<slug>]]." If no canonical note exists yet, write the full article in the topic where it is most central, and create a stub in the other topic that links to it.
+
+**Captured media has only a stub media-description note (no OCR, vision description, or transcript yet):**
+The synthesis pass can embed the image inline (per the media-embed rule in the Full Article Format / Entity Note Format sections above) and add `[[knowledgebase/topics/<topic-slug>/notes/media/<slug>]]` to `related:`, but it must NOT auto-fill the OCR, Vision Description, or Transcript sections of the media-description note — those require human review or a vision-capable model. If a central media is unanalysed, surface it as a follow-up in the final report (Phase 7) so the user knows the wiki points at an image whose meaning has not yet been written down.
+
+**Source has `media:` entries with `status: discovered` (bytes never fetched):**
+Treat the discovery as known-but-uncaptured. Do not embed (the file is not on disk). Link the existing discovered-media note from `## See Also` if one exists, or flag the missing description-note stub for the user to author. Never invent a `local_path:` that doesn't exist on disk — kb-lint Rule 29D would flag it on the next pass.

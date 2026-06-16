@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>KB Workflow Dashboard</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>KB Workflow</h1>
+        <p id="subhead">Loading...</p>
+      </div>
+      <button id="refresh" type="button" title="Refresh status">Refresh</button>
+    </header>
+
+    <main>
+      <section class="band">
+        <div class="grid metrics" id="metrics"></div>
+      </section>
+
+      <section class="grid dashboard-grid">
+        <article class="panel" id="checkpoint-panel">
+          <h2>Checkpoint</h2>
+          <div class="content muted">Loading...</div>
+        </article>
+
+        <article class="panel" id="kb-feed-panel">
+          <h2>kb-feed</h2>
+          <div class="content muted">Loading...</div>
+        </article>
+      </section>
+
+      <section class="band">
+        <h2>Queues</h2>
+        <div class="grid queue-grid" id="global-queues"></div>
+      </section>
+
+      <section class="band">
+        <div class="section-title">
+          <h2>Topics</h2>
+          <input id="topic-filter" type="search" placeholder="Filter topics">
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Topic</th>
+                <th>Status</th>
+                <th>Queued</th>
+                <th>Sources</th>
+                <th>Notes</th>
+                <th>Modified</th>
+              </tr>
+            </thead>
+            <tbody id="topics-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="band">
+        <div class="section-title">
+          <h2>Projects</h2>
+          <span class="hint">Read-only MVP. Command execution is intentionally deferred.</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th>Status</th>
+                <th>Open Todos</th>
+                <th>Active</th>
+                <th>Blocked</th>
+                <th>Modified</th>
+              </tr>
+            </thead>
+            <tbody id="projects-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="grid dashboard-grid">
+        <article class="panel" id="dive-panel">
+          <h2>Research Dive Queue</h2>
+          <div class="content muted">Loading...</div>
+        </article>
+        <article class="panel" id="log-panel">
+          <h2>Recent Log</h2>
+          <div class="content muted">Loading...</div>
+        </article>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
+

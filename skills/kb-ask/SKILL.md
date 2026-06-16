@@ -56,6 +56,7 @@ Navigate and answer:
 
 1. Read `topics/<topic>/_summary.md` for each relevant topic identified in `_index.md`.
 2. Only read individual notes if the summary indicates they are relevant.
+   - *Optional accelerator:* if the `obsidian` CLI is available (requires the desktop app to be running), `obsidian search "<query>"` can rank candidate notes (aliases, headings) faster than grep when summaries don't make the target obvious. Fall back to Grep; never treat the CLI as a dependency.
 3. Answer the question using KB content.
 
 **Citation format:** `[Note Title](obsidian://open?vault=<VAULT_NAME>&file=knowledgebase%2Ftopics%2F<topic>%2Fnotes%2F<note>)`
@@ -88,7 +89,7 @@ When the user picks a topic:
 
 Show all pending research items across the KB.
 
-**Step A — Read `_dive-queue.md`** and list all unchecked items grouped by topic.
+**Step A — Read the derived `_dive-queue.md`** (a generated/read-only dashboard built from topic `## Auto-approved` sections + `research-ideas.md`) and list its items grouped by topic. If the user adds a new prose research idea during this session, write it to the relevant `topics/<topic>/research-ideas.md` (it appears in the dashboard on regeneration) — never directly to `_dive-queue.md`.
 
 **Step B — Find rabbit-hole notes** using Grep: search for `rabbit-hole` in the `tags:` frontmatter of all notes under `knowledgebase/topics/`. List any notes tagged `rabbit-hole` that are not already in the dive queue.
 
@@ -127,7 +128,7 @@ If the user asks you to correct or update a note, apply it after verifying the a
 
 ## Link Format
 
-- Internal notes: `[[notes/concepts/slug]]` or `[Title](obsidian://open?vault=<VAULT_NAME>&file=...)`
+- Internal notes: `[[knowledgebase/topics/<topic-slug>/notes/concepts/slug]]` or `[Title](obsidian://open?vault=<VAULT_NAME>&file=...)`
 - External URLs: `[display text](https://url)`
 - **Never use `[[https://...]]`** — causes Obsidian errors
 

@@ -8,8 +8,8 @@ title: "Obsidian"
 description: "Obsidian's defining feature is its graph-based linking model: notes link to each other via wikilinks (`Note name`), and the application renders these links as a navigable graph."
 status: draft
 tags: ["obsidian", "overview", "note-taking", "pkm", "vault"]
-sources: ["[[sources/2026-04-10-obsidian-help-overview]]"]
-related: ["[[notes/concepts/obsidian-markdown]]", "[[notes/concepts/obsidian-internal-links]]", "[[notes/concepts/obsidian-plugins]]", "[[notes/concepts/obsidian-uri-protocol]]", "[[notes/concepts/obsidian-cli]]"]
+sources: ["[[knowledgebase/topics/obsidian/sources/2026-04-10-obsidian-help-overview]]"]
+related: ["[[knowledgebase/topics/obsidian/notes/concepts/obsidian-markdown]]", "[[knowledgebase/topics/obsidian/notes/concepts/obsidian-internal-links]]", "[[knowledgebase/topics/obsidian/notes/concepts/obsidian-plugins]]", "[[knowledgebase/topics/obsidian/notes/concepts/obsidian-uri-protocol]]", "[[knowledgebase/topics/obsidian/notes/concepts/obsidian-cli]]"]
 ---
 
 # Obsidian
@@ -26,7 +26,7 @@ The three principles that distinguish Obsidian from most note-taking tools:
 
 **Plain text.** Notes are standard Markdown files. They can be opened, edited, searched, and processed by any tool that handles text: editors, scripts, version control systems, LLMs. The [Obsidian Flavored Markdown](notes/concepts/obsidian-markdown) extensions add capabilities without breaking plain-text portability.
 
-**Extensible.** The plugin ecosystem covers an enormous range of use cases — from Dataview (treating the vault as a database), to Leaflet (interactive maps), to Templater (programmatic note creation), to Git integration, to AI integrations. See [[notes/concepts/obsidian-plugins]].
+**Extensible.** The plugin ecosystem covers an enormous range of use cases — from Dataview (treating the vault as a database), to Leaflet (interactive maps), to Templater (programmatic note creation), to Git integration, to AI integrations. See [[knowledgebase/topics/obsidian/notes/concepts/obsidian-plugins]].
 
 ## Vault Structure
 
@@ -54,14 +54,14 @@ The official help documentation organises the getting-started experience as five
 
 ## This KB's Relationship to Obsidian
 
-This knowledge base is built on Obsidian as its storage and rendering layer. The [[notes/concepts/obsidian-uri-protocol|Obsidian URI protocol]] powers citation deep links. The [[notes/concepts/obsidian-markdown|OFM]] conventions govern all note formatting. The [[notes/concepts/obsidian-cli|Obsidian CLI]] is the intended interface for automation. Understanding Obsidian well is prerequisite for maintaining and extending this KB system.
+This knowledge base is built on Obsidian as its storage and rendering layer. The [[knowledgebase/topics/obsidian/notes/concepts/obsidian-uri-protocol|Obsidian URI protocol]] powers citation deep links. The [[knowledgebase/topics/obsidian/notes/concepts/obsidian-markdown|OFM]] conventions govern all note formatting. The [[knowledgebase/topics/obsidian/notes/concepts/obsidian-cli|Obsidian CLI]] is the intended interface for automation. Understanding Obsidian well is prerequisite for maintaining and extending this KB system.
 
 ## See Also
 
-- [[notes/concepts/obsidian-markdown]] — OFM syntax reference
-- [[notes/concepts/obsidian-internal-links]] — wikilink system in depth
-- [[notes/concepts/obsidian-uri-protocol]] — the `obsidian://` deep-link protocol
-- [[notes/concepts/obsidian-cli]] — command-line interface
-- [[notes/concepts/obsidian-plugins]] — plugin ecosystem overview
-- [[notes/concepts/obsidian-dataview]] — Dataview: treating the vault as a queryable database
-- [[notes/syntheses/using-obsidian-strategies]] — use cases and strategies across different goals
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-markdown]] — OFM syntax reference
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-internal-links]] — wikilink system in depth
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-uri-protocol]] — the `obsidian://` deep-link protocol
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-cli]] — command-line interface
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-plugins]] — plugin ecosystem overview
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-dataview]] — Dataview: treating the vault as a queryable database
+- [[knowledgebase/topics/obsidian/notes/syntheses/using-obsidian-strategies]] — use cases and strategies across different goals

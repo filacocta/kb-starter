@@ -8,7 +8,7 @@ You are performing a focused KB scan to orient yourself before starting work.
 
 ## KB Location
 
-KB root: `/path/to/your/vault/knowledgebase/`
+At startup, read `~/.claude/kb-config.md` to get `KB_ROOT` (the KB root path) and `VAULT_NAME`. If that file does not exist, stop and tell the user to create it — see the kb-starter README.
 
 **Task / topic:** $ARGUMENTS
 
@@ -19,7 +19,9 @@ KB root: `/path/to/your/vault/knowledgebase/`
 1. Read `_index.md`.
 2. Identify all topics and projects in the index that are semantically relevant to the task or topic in $ARGUMENTS. Cast a wide net — include adjacent topics if there is plausible overlap.
 3. For each relevant match, read its `_summary.md`.
-4. Read `_dive-queue.md` briefly — flag any queued research items that intersect the task.
+4. Read `_dive-queue.md` briefly — flag any queued research items that intersect the task. (It is a generated dashboard, regenerated on every queue check-off and nightly kb-auto run.)
+
+*Optional accelerator:* if the `obsidian` CLI is available (requires the desktop app to be running), `obsidian search "<term>"` can locate candidate notes faster than grep when the index/summaries don't make the target obvious. Never treat CLI availability as a dependency — fall back to Grep.
 
 ---
 
