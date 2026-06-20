@@ -488,7 +488,7 @@
 
     <section class="band">
       <div class="section-title">
-        <h2>KB Skills And Meta-Skills</h2>
+        <h2>The 9 KB Skills</h2>
         <p>These slash-style skills are agent workflows, but their behavior is defined against the shared KB schema, rules, and tools.</p>
       </div>
       <div class="cards">
@@ -545,12 +545,6 @@
           <h3>Session closeout</h3>
           <p>Updates project summaries, captures new topic knowledge, records decisions and open questions, and appends to the KB log.</p>
           <p class="use"><strong>Use when:</strong> a feature, investigation, or project session reaches a natural stopping point.</p>
-        </article>
-        <article class="card">
-          <span class="slash">$book-to-skill</span>
-          <h3>Source cluster to skill</h3>
-          <p>Evaluates books, long-form PDFs, article clusters, and external skill artifacts before any candidate skill is created or installed.</p>
-          <p class="use"><strong>Use when:</strong> source synthesis may justify a reusable agent procedure, critique checklist, or eval fixture.</p>
         </article>
       </div>
     </section>
@@ -616,7 +610,7 @@
           <p class="muted"><code>_index.md</code> is the top-level map. Agents read it first, then topic or project summaries. <code>_log.md</code> records operations. <code>_checkpoint.md</code> makes long operations resumable. <code>_schema.md</code> and <code>_rules.md</code> define the cross-agent contract.</p>
           <br>
           <h3>Topic Shape</h3>
-          <p class="muted">Each topic keeps raw source notes in <code>sources/</code>, wiki output in <code>notes/</code>, queued URLs in <code>reading-list.md</code>, and a compressed orientation file in <code>_summary.md</code>.</p>
+          <p class="muted">Each topic keeps raw source notes in <code>sources/</code>, wiki output in <code>notes/</code>, queued URLs in <code>reading-list.md</code>, prose rabbit-holes in <code>research-ideas.md</code>, and a compressed orientation file in <code>_summary.md</code>. Reading lists use one canonical section ladder — <code>## Pending → ## Approved → ## Auto-approved → ## Processed → ## Failed — Retry</code> — enforced by <code>kb-lint.py</code>; sub-group with <code>###</code>.</p>
           <br>
           <h3>Project Shape</h3>
           <p class="muted">Projects live under <code>projects/&lt;slug&gt;/</code>. The summary captures LLM orientation and project direction, while <code>_todos.md</code> tracks project work.</p>

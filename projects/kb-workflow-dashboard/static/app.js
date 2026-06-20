@@ -355,18 +355,9 @@ function buildAttentionItems(data) {
     });
   }
 
-  if (data.dive_queue?.unchecked > 0) {
-    add({
-      priority: 48,
-      level: "info",
-      label: "generated",
-      title: `${plural(data.dive_queue.unchecked, "research idea")} in the generated dive view`,
-      detail: "This is a read-only dashboard over Auto-approved queues and research-ideas files.",
-      action: "Review dive queue",
-      path: data.dive_queue.path,
-      queuePath: data.dive_queue.path,
-    });
-  }
+  // The dive queue is a generated read-only view (derived from topic ## Auto-approved
+  // sections + research-ideas.md). It is intentionally NOT an attention item — you act on
+  // the underlying topic queues, not the generated view. It remains in the metrics strip.
 
   [...data.projects, ...data.topics]
     .map((row) => ({ ...row, age: dayAge(row.modified), kind: row.todo_counts ? "project" : "topic" }))

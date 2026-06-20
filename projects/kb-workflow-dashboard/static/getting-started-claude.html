@@ -66,7 +66,7 @@
     <p>A personal, LLM-agnostic research vault: you <strong>capture</strong> sources once, an agent <strong>ingests</strong> them into structured source notes, then <strong>synthesises</strong> them into a browsable wiki. Everything is plain Markdown in an Obsidian vault — the agents and scripts are just disciplined hands on top of it.</p>
   </header>
 
-  <p class="lead">This page explains the big picture: how knowledge flows in, which skills move it, the scripts underneath, and the rules that keep it trustworthy. Toggle the tab above to compare with the system-oriented write-up.</p>
+  <p class="lead">This page explains the big picture: how knowledge flows in, the nine skills that move it, the scripts underneath, and the rules that keep it trustworthy. Toggle the tab above to compare with the system-oriented write-up.</p>
 
   <h2>1 · The mental model</h2>
   <div class="cols">
@@ -91,7 +91,7 @@
       <div class="arrow">→</div>
       <div class="node"><span class="k">kb-feed pipeline</span><small>Daemon appends the URL to that topic's <code>reading-list.md</code> under <em>Pending</em>.</small></div>
       <div class="arrow">→</div>
-      <div class="node"><span class="k">reading-list.md</span><small>The per-topic queue of sources waiting to be ingested.</small></div>
+      <div class="node"><span class="k">reading-list.md</span><small>Per-topic queue on the canonical ladder: <code>## Pending → ## Approved → ## Auto-approved → ## Processed → ## Failed — Retry</code> (lint-enforced). Promotion is upward and explicit.</small></div>
     </div>
 
     <div class="arrow down">↓</div>
@@ -133,8 +133,8 @@
     </div>
   </div>
 
-  <h2>3 · Skills and meta-skills</h2>
-  <p class="lead">Skills are invoked as slash commands (e.g. <code>/kb-ingest &lt;url&gt;</code>) or named meta-skills such as <code>$book-to-skill</code>. Agent-specific config sets <code>KB_ROOT</code> and <code>VAULT_NAME</code>; the durable contract is the KB's <code>_schema.md</code>, <code>_rules.md</code>, and shared <code>_tools/</code>.</p>
+  <h2>3 · The nine skills</h2>
+  <p class="lead">Skills are invoked as slash commands (e.g. <code>/kb-ingest &lt;url&gt;</code>). Agent-specific config sets <code>KB_ROOT</code> and <code>VAULT_NAME</code>; the durable contract is the KB's <code>_schema.md</code>, <code>_rules.md</code>, and shared <code>_tools/</code>.</p>
   <table>
     <tr><th>Skill</th><th>What it does</th><th>Reach for it when…</th></tr>
     <tr><td><code>/kb-ask</code></td><td>Scoped Q&amp;A / browse session over KB content; navigates by topic summary, cites with <code>obsidian://</code> links.</td><td>you want to query or explore what's already captured.</td></tr>
@@ -146,7 +146,6 @@
     <tr><td><code>/kb-scan</code></td><td>Light load of <code>_index.md</code> + relevant <code>_summary.md</code> files — prior decisions, constraints, open questions.</td><td>at the <em>start</em> of work on a topic/project.</td></tr>
     <tr><td><code>/kb-wrap</code></td><td>Update the project <code>_summary.md</code> (status, decisions, questions) + append a <code>_log.md</code> entry.</td><td>at a natural <em>stopping</em> point.</td></tr>
     <tr><td><code>/kb-project-init</code></td><td>Scaffold a new <code>projects/&lt;slug&gt;/_summary.md</code> from a codebase / notes / description.</td><td>starting work on a project with no KB entry.</td></tr>
-    <tr><td><code>$book-to-skill</code></td><td>Evaluate books, long PDFs, article clusters, and external skill artifacts against promotion gates and eval fixtures.</td><td>a source cluster might justify a reusable agent skill.</td></tr>
   </table>
 
   <h2>4 · The scripts underneath (<code>_tools/</code>)</h2>
