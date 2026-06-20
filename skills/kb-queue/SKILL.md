@@ -178,7 +178,7 @@ For each approved item, in order:
 
 8. **Write source note:** Follow the same structure as `/kb-ingest` Step B exactly, including the `media:` frontmatter and `## Captured Media` section produced in step 6.
 
-9. **Update reading list (locked):** mark the item processed via `"<KB_ROOT>/_tools/kb-checkoff.py" --file topics/<topic>/reading-list.md --url "<url>" --mark x --note "ingested <date> → [[knowledgebase/topics/<topic>/sources/<slug>]]"` (shared `.kb-write.lock`, per Rule 13). Append approved follow-up **URLs** to `reading-list.md` and prose-only rabbit holes to `topics/<topic>/research-ideas.md` — never to `_dive-queue.md` (generated/read-only).
+9. **Update reading list (locked):** mark the item processed via `"<KB_ROOT>/_tools/kb-checkoff.py" --file topics/<topic>/reading-list.md --url "<url>" --mark x --note "ingested <date> → [[knowledgebase/topics/<topic>/sources/<slug>]]"` (shared `.kb-write.lock`, per Rule 13). Append approved follow-up **URLs** under the `## Pending` section of `reading-list.md` (canonical section ladder in `_schema.md`: only Pending/Approved/Auto-approved/Processed/Failed — Retry permitted) and prose-only rabbit holes to `topics/<topic>/research-ideas.md` — never to `_dive-queue.md` (generated/read-only).
 
 10. **Update checkpoint:** Mark item as done in `_checkpoint.md`, update `**Last updated:**`. Append captured-media URLs and `media_id` values under a "Captured Media" subsection.
 

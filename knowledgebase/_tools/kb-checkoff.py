@@ -2,7 +2,7 @@
 """Race-safe check-off of a queue line in a KB markdown file.
 
 Holds an exclusive lock on `<kb-root>/.kb-write.lock`, re-reads the target file
-inside the lock, flips the matching `- [ ]` item to `- [x]` (or `- [!]`),
+inside the lock, flips the matching checkbox item to `- [x]` (or `- [!]`),
 appends a note, and writes atomically (temp file + os.replace). This is the
 single safe path for skills AND kb-feed to mutate queue files concurrently.
 
@@ -16,11 +16,21 @@ import argparse
 import datetime as dt
 import fcntl
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 LOCK_NAME = ".kb-write.lock"
+CHECKBOX_RE = re.compile(r"^(\s*-\s+\[)([ xX!~?])(\]\s*)")
+MARKS = {" ", "x", "!", "~", "?"}
+
+
+def normalize_mark(mark: str) -> str:
+    value = mark.lower()
+    if value not in MARKS:
+        raise ValueError(f"invalid checkbox mark: {mark!r}")
+    return value
 
 
 def regenerate_dive_queue(kb_root: Path) -> None:
@@ -59,25 +69,31 @@ def checkoff(
     lock_path: Path,
     ideas_backlog: Path | None = None,
     kb_root: Path | None = None,
+    from_mark: str = " ",
 ) -> tuple[bool, str]:
+    mark = normalize_mark(mark)
+    from_mark = normalize_mark(from_mark)
     lock_path.touch(exist_ok=True)
     with open(lock_path, "r") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)  # released on close
         try:
             text = file_path.read_text(encoding="utf-8")
             lines = text.splitlines(keepends=True)
-            hits = [i for i, ln in enumerate(lines)
-                    if ln.lstrip().startswith("- [ ]") and url in ln]
+            hits = []
+            for i, line in enumerate(lines):
+                match = CHECKBOX_RE.match(line)
+                if match and match.group(2).lower() == from_mark and url in line:
+                    hits.append(i)
             if not hits:
-                return False, f"no unchecked line containing: {url}"
+                return False, f"no [{from_mark}] line containing: {url}"
             if len(hits) > 1:
-                return False, f"ambiguous: {len(hits)} unchecked lines contain {url}"
+                return False, f"ambiguous: {len(hits)} [{from_mark}] lines contain {url}"
             i = hits[0]
             line = lines[i]
             newline = "\n" if line.endswith("\n") else ""
             body = line[:-1] if newline else line
-            routed_body = body.replace("- [ ]", "", 1).strip()
-            body = body.replace("- [ ]", f"- [{mark}]", 1).rstrip()
+            routed_body = CHECKBOX_RE.sub("", body, count=1).strip()
+            body = CHECKBOX_RE.sub(rf"\g<1>{mark}\g<3>", body, count=1).rstrip()
             if note:
                 body = f"{body} — {note}"
             lines[i] = body + newline
@@ -102,7 +118,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--kb-root", default=str(Path.home() / "Vault" / "knowledgebase"))
     p.add_argument("--file", required=True, help="queue file (relative to kb-root or absolute)")
     p.add_argument("--url", required=True, help="substring identifying the unchecked line")
-    p.add_argument("--mark", choices=["x", "!"], default="x")
+    p.add_argument("--from-mark", choices=[" ", "x", "X", "!", "~", "?"], default=" ")
+    p.add_argument("--mark", choices=["x", "!", "~", "?"], default="x")
     p.add_argument("--note", default="")
     p.add_argument(
         "--route-ideas-backlog",
@@ -129,6 +146,7 @@ def main(argv: list[str] | None = None) -> int:
         kb_root / LOCK_NAME,
         ideas_backlog=ideas_backlog,
         kb_root=kb_root,
+        from_mark=args.from_mark,
     )
     print(msg, file=sys.stderr if not ok else sys.stdout)
     if ok:

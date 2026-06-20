@@ -4,6 +4,11 @@ plugin/main.js
 plugin/data.json
 plugin/package-lock.json
 
+## Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
 ## Environment / secrets
 *.env
 .env.*

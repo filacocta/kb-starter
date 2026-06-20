@@ -18,6 +18,18 @@ If $ARGUMENTS is empty, ask the user: "What project or topic should I update, an
 
 ## Procedure
 
+### 0 — Lint gate
+
+Before writing any KB files, run the bundled lint tool against the KB root:
+
+```bash
+python3 "$KB_ROOT/_tools/kb-lint.py" --kb-root "$KB_ROOT" --all
+```
+
+Show the lint summary to the user. If the lint tool reports structural issues, briefly state what they are and whether they affect the files you are about to touch. Lint findings do not automatically block the wrap, but do not write on top of an authorship, frontmatter, or broken-link problem in the target files without surfacing it first.
+
+Do not call a `kb-fix` command unless the installed KB actually provides one. This starter ships linting and guarded queue tools, not a general automatic fixer.
+
 ### 1 — Identify scope
 
 From $ARGUMENTS (or user response), determine:

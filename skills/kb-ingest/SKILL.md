@@ -392,7 +392,7 @@ Update `_checkpoint.md` after each stub.
 
 If `topics/<topic>/reading-list.md` exists:
 - Mark the current source processed (locked) via `"<KB_ROOT>/_tools/kb-checkoff.py" --file topics/<topic>/reading-list.md --url "<url>" --mark x --note "processed <date> → [[knowledgebase/topics/<topic>/sources/<slug>]]"`.
-- Append approved follow-up **URL** sources as new unchecked items in `reading-list.md`; put prose-only rabbit holes in `topics/<topic>/research-ideas.md`. Never write `_dive-queue.md` (generated/read-only, Rule 13).
+- Append approved follow-up **URL** sources as new unchecked items under the `## Pending` section of `reading-list.md` (canonical section ladder defined in `_schema.md`: only Pending/Approved/Auto-approved/Processed/Failed — Retry are permitted level-2 headings); put prose-only rabbit holes in `topics/<topic>/research-ideas.md`. Never write `_dive-queue.md` (generated/read-only, Rule 13).
 - Update `modified:` frontmatter
 
 If it does not exist yet, create it with the current source marked processed and approved follow-ups added.

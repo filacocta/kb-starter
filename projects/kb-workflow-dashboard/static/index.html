@@ -8,16 +8,35 @@
   </head>
   <body>
     <header class="topbar">
-      <div>
-        <h1>KB Workflow</h1>
+      <div class="brand-block">
+        <div class="brand-line">
+          <h1>KB Workflow</h1>
+          <span class="mode-chip">Read-only</span>
+        </div>
         <p id="subhead">Loading...</p>
       </div>
-      <button id="refresh" type="button" title="Refresh status">Refresh</button>
+      <nav class="top-actions" aria-label="Dashboard actions">
+        <a class="top-link top-action" id="getting-started-link" href="/getting-started.html" aria-label="Open getting started guide">Guide</a>
+        <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch color theme">Dark</button>
+        <button class="top-action" id="refresh" type="button" title="Refresh status" aria-label="Refresh dashboard status">Refresh</button>
+      </nav>
     </header>
 
     <main>
-      <section class="band">
-        <div class="grid metrics" id="metrics"></div>
+      <section class="band attention-band" id="attention-panel">
+        <div class="section-title">
+          <h2>Needs Attention</h2>
+          <span class="hint" id="attention-summary">Loading...</span>
+        </div>
+        <div class="attention-list" id="attention-list"></div>
+      </section>
+
+      <section class="band status-band" aria-labelledby="status-heading">
+        <div class="section-title compact-title">
+          <h2 id="status-heading">Status</h2>
+          <span class="hint" id="status-summary">Loading...</span>
+        </div>
+        <div class="metrics" id="metrics"></div>
       </section>
 
       <section class="grid dashboard-grid">
@@ -33,25 +52,34 @@
       </section>
 
       <section class="band">
-        <h2>Queues</h2>
+        <div class="section-title">
+          <h2>Queues</h2>
+        </div>
         <div class="grid queue-grid" id="global-queues"></div>
       </section>
 
       <section class="band">
         <div class="section-title">
           <h2>Topics</h2>
-          <input id="topic-filter" type="search" placeholder="Filter topics">
+          <div class="controls">
+            <div class="segmented" aria-label="Topic queue filter">
+              <button class="segment active" type="button" data-topic-mode="all" aria-pressed="true">All</button>
+              <button class="segment" type="button" data-topic-mode="open" aria-pressed="false">Open</button>
+              <button class="segment" type="button" data-topic-mode="failed" aria-pressed="false">Failed</button>
+            </div>
+            <input id="topic-filter" type="search" aria-label="Filter topics" placeholder="Filter topics">
+          </div>
         </div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Topic</th>
-                <th>Status</th>
-                <th>Queued</th>
-                <th>Sources</th>
-                <th>Notes</th>
-                <th>Modified</th>
+                <th><button class="sort" type="button" data-topic-sort="slug" data-label="Topic" aria-pressed="false">Topic</button></th>
+                <th><button class="sort" type="button" data-topic-sort="status" data-label="Status" aria-pressed="false">Status</button></th>
+                <th><button class="sort" type="button" data-topic-sort="queued" data-label="Queued" aria-pressed="true">Queued desc</button></th>
+                <th><button class="sort" type="button" data-topic-sort="sources" data-label="Sources" aria-pressed="false">Sources</button></th>
+                <th><button class="sort" type="button" data-topic-sort="notes" data-label="Notes" aria-pressed="false">Notes</button></th>
+                <th><button class="sort" type="button" data-topic-sort="modified" data-label="Modified" aria-pressed="false">Modified</button></th>
               </tr>
             </thead>
             <tbody id="topics-body"></tbody>
@@ -62,18 +90,18 @@
       <section class="band">
         <div class="section-title">
           <h2>Projects</h2>
-          <span class="hint">Read-only MVP. Command execution is intentionally deferred.</span>
         </div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Project</th>
-                <th>Status</th>
-                <th>Open Todos</th>
-                <th>Active</th>
-                <th>Blocked</th>
-                <th>Modified</th>
+                <th><button class="sort" type="button" data-project-sort="slug" data-label="Project" aria-pressed="false">Project</button></th>
+                <th><button class="sort" type="button" data-project-sort="status" data-label="Status" aria-pressed="false">Status</button></th>
+                <th><button class="sort" type="button" data-project-sort="open" data-label="Open Todos" aria-pressed="true">Open Todos desc</button></th>
+                <th><button class="sort" type="button" data-project-sort="active" data-label="Active" aria-pressed="false">Active</button></th>
+                <th><button class="sort" type="button" data-project-sort="review" data-label="Review" aria-pressed="false">Review</button></th>
+                <th><button class="sort" type="button" data-project-sort="blocked" data-label="Blocked" aria-pressed="false">Blocked</button></th>
+                <th><button class="sort" type="button" data-project-sort="modified" data-label="Modified" aria-pressed="false">Modified</button></th>
               </tr>
             </thead>
             <tbody id="projects-body"></tbody>
@@ -91,9 +119,20 @@
           <div class="content muted">Loading...</div>
         </article>
       </section>
+
+      <aside class="drawer hidden" id="detail-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" aria-hidden="true" tabindex="-1">
+        <div class="drawer-head">
+          <div>
+            <h2 id="drawer-title">Details</h2>
+            <p class="hint" id="drawer-subtitle"></p>
+          </div>
+          <button id="drawer-close" type="button" title="Close details">Close</button>
+        </div>
+        <div id="drawer-content" class="drawer-content"></div>
+      </aside>
     </main>
 
+    <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
     <script src="/app.js"></script>
   </body>
 </html>
-

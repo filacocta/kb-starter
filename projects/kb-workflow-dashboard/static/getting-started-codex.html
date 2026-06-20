@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Getting Started with the KB</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f6f3;
+      --ink: #1f2528;
+      --muted: #667075;
+      --panel: #ffffff;
+      --panel-soft: #fbfcfb;
+      --line: #d9ded9;
+      --accent: #1d6f66;
+      --accent-dark: #133936;
+      --accent-soft: #e7f3f0;
+      --accent-2: #8a5b19;
+      --warn-soft: #fff5df;
+      --bad: #a23b3b;
+      --bad-soft: #fdecec;
+      --ok: #28724b;
+      --ok-soft: #e8f3ec;
+      --top: #182124;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: clamp(28px, 5vw, 46px);
+      line-height: 1.04;
+      letter-spacing: 0;
+      max-width: 980px;
+    }
+
+    h2 {
+      font-size: 20px;
+      margin-bottom: 12px;
+    }
+
+    h3 {
+      font-size: 15px;
+      margin-bottom: 6px;
+    }
+
+    code {
+      padding: 1px 5px;
+      border-radius: 5px;
+      background: #eef2ef;
+      color: #263033;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+    }
+
+    .hero {
+      background: var(--top);
+      color: #f7f8f5;
+      border-bottom: 4px solid var(--accent);
+      padding: 30px 28px 26px;
+    }
+
+    .hero-inner,
+    main {
+      width: min(1180px, 100%);
+      margin: 0 auto;
+    }
+
+    .eyebrow {
+      color: #c7d0cf;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+
+    .lede {
+      max-width: 860px;
+      margin-top: 14px;
+      color: #d8e1df;
+      font-size: 17px;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1fr 290px;
+      gap: 20px;
+      align-items: end;
+    }
+
+    .quick-facts {
+      display: grid;
+      gap: 8px;
+      padding: 14px;
+      border: 1px solid rgba(216, 225, 223, 0.25);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .quick-facts span {
+      color: #c7d0cf;
+      font-size: 13px;
+    }
+
+    main {
+      padding: 18px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .panel,
+    .band {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .band {
+      margin-top: 14px;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .tagline {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      border-radius: 999px;
+      padding: 2px 9px;
+      background: #eef2ef;
+      color: #263033;
+      font-size: 13px;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+
+    .pill.ok {
+      background: var(--ok-soft);
+      color: var(--ok);
+    }
+
+    .pill.warn {
+      background: var(--warn-soft);
+      color: var(--accent-2);
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(128px, 1fr));
+      gap: 12px;
+      align-items: stretch;
+      margin-top: 12px;
+    }
+
+    .flow-card {
+      position: relative;
+      min-height: 148px;
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-soft);
+    }
+
+    .flow-card::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      right: -12px;
+      width: 12px;
+      height: 2px;
+      background: var(--accent);
+    }
+
+    .flow-card::before {
+      content: "";
+      position: absolute;
+      top: calc(50% - 5px);
+      right: -13px;
+      border-top: 6px solid transparent;
+      border-bottom: 6px solid transparent;
+      border-left: 8px solid var(--accent);
+      z-index: 1;
+    }
+
+    .flow-card:last-child::before,
+    .flow-card:last-child::after {
+      display: none;
+    }
+
+    .flow-card strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--accent-dark);
+      font-size: 14px;
+    }
+
+    .flow-card p {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .flow-card .mini {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--accent-2);
+      font-weight: 700;
+    }
+
+    .project-loop {
+      margin-top: 12px;
+      padding: 12px;
+      border: 1px dashed #b9c9c4;
+      border-radius: 8px;
+      background: #f7fbfa;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 13px;
+      background: var(--panel-soft);
+    }
+
+    .slash {
+      display: inline-flex;
+      margin-bottom: 8px;
+      color: #f7f8f5;
+      background: var(--accent);
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-weight: 750;
+      font-size: 13px;
+    }
+
+    .use {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .compact-list {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .compact-list li {
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--panel-soft);
+    }
+
+    .tree {
+      overflow-x: auto;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f7fbfa;
+      color: #263033;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+      line-height: 1.55;
+      white-space: pre;
+    }
+
+    .rules {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .rule {
+      border-left: 4px solid var(--accent);
+      background: var(--panel-soft);
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .rule.danger {
+      border-left-color: var(--bad);
+      background: var(--bad-soft);
+    }
+
+    .rule.warn {
+      border-left-color: var(--accent-2);
+      background: var(--warn-soft);
+    }
+
+    .section-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .section-title p {
+      max-width: 620px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    footer {
+      margin-top: 18px;
+      padding: 18px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    @media (max-width: 980px) {
+      .hero-grid,
+      .two,
+      .three,
+      .cards,
+      .rules {
+        grid-template-columns: 1fr;
+      }
+
+      .flow {
+        grid-template-columns: 1fr;
+      }
+
+      .flow-card {
+        min-height: auto;
+      }
+
+      .flow-card::after {
+        top: auto;
+        right: 50%;
+        bottom: -12px;
+        width: 2px;
+        height: 12px;
+      }
+
+      .flow-card::before {
+        top: auto;
+        right: calc(50% - 5px);
+        bottom: -15px;
+        border-left: 6px solid transparent;
+        border-right: 6px solid transparent;
+        border-top: 8px solid var(--accent);
+        border-bottom: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner hero-grid">
+      <div>
+        <div class="eyebrow">Knowledge Base Workflow Dashboard</div>
+        <h1>Getting started with the KB</h1>
+        <p class="lede">This vault is a personal, Obsidian-readable knowledge base built on <code>sbuffkin/kb-starter</code> conventions. It is LLM-agnostic: plain Markdown, YAML frontmatter, wikilinks, shared rules, and helper scripts form the contract any agent can follow.</p>
+        <div class="tagline">
+          <span class="pill ok">capture once</span>
+          <span class="pill ok">synthesise later</span>
+          <span class="pill warn">source notes -> wiki</span>
+          <span class="pill">summary-first navigation</span>
+        </div>
+      </div>
+      <aside class="quick-facts" aria-label="KB configuration">
+        <strong>Runtime config</strong>
+        <span><code>agent KB config</code></span>
+        <span><code>KB_ROOT: /path/to/vault/knowledgebase</code></span>
+        <span><code>VAULT_NAME: &lt;vault name&gt;</code></span>
+        <span>Agent workflows read this at startup.</span>
+      </aside>
+    </div>
+  </header>
+
+  <main>
+    <section class="band">
+      <div class="section-title">
+        <h2>Big Picture</h2>
+        <p>Use the KB as a research pipeline, not a dumping ground.</p>
+      </div>
+      <div class="grid three">
+        <article class="panel">
+          <h3>Sources Are Raw Evidence</h3>
+          <p class="muted">URLs, PDFs, transcripts, tweet mirrors, and media records become immutable <code>type: source</code> notes under a topic's <code>sources/</code> folder.</p>
+        </article>
+        <article class="panel">
+          <h3>Wiki Notes Are the Product</h3>
+          <p class="muted">Concept, entity, and synthesis notes turn accumulated sources into browsable prose. Stubs are allowed after one source; fuller articles start when two or more sources support a topic.</p>
+        </article>
+        <article class="panel">
+          <h3>Agents Read Small First</h3>
+          <p class="muted">The navigation path is <code>_index.md</code>, then relevant <code>_summary.md</code> files, then individual notes only as needed. This keeps context windows focused.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="section-title">
+        <h2>End-to-End Workflow</h2>
+        <p>Capture candidates, ingest evidence, synthesise the wiki, maintain structure, then query and loop project knowledge back in.</p>
+      </div>
+      <div class="flow" aria-label="KB workflow flowchart">
+        <article class="flow-card">
+          <strong>1. Capture</strong>
+          <p>Telegram bot sends links through the <code>kb-feed</code> pipeline into per-topic <code>reading-list.md</code> queues.</p>
+          <div class="mini">Queue source candidates</div>
+        </article>
+        <article class="flow-card">
+          <strong>2. Ingest</strong>
+          <p><code>/kb-ingest</code> handles one source interactively. <code>/kb-queue</code> batches approved items. <code>/kb-auto</code> processes <code>## Auto-approved</code> unattended.</p>
+          <div class="mini">Write source notes</div>
+        </article>
+        <article class="flow-card">
+          <strong>3. Synthesise</strong>
+          <p><code>/kb-synthesise</code> turns source folders into concept, entity, and synthesis notes with citations and backlinks.</p>
+          <div class="mini">Build the wiki</div>
+        </article>
+        <article class="flow-card">
+          <strong>4. Maintain</strong>
+          <p><code>/kb-lint</code> checks broken wikilinks, orphan pages, incomplete frontmatter, contradictions, stale sources, and media integrity.</p>
+          <div class="mini">Find structural problems</div>
+        </article>
+        <article class="flow-card">
+          <strong>5. Query</strong>
+          <p><code>/kb-ask</code> answers questions, browses topics, and surfaces research queues using summary-first navigation.</p>
+          <div class="mini">Use the knowledge</div>
+        </article>
+        <article class="flow-card">
+          <strong>6. Project Loop</strong>
+          <p><code>/kb-scan</code> starts sessions, <code>/kb-wrap</code> records stopping points, and <code>/kb-project-init</code> creates new project entries.</p>
+          <div class="mini">Keep work state durable</div>
+        </article>
+      </div>
+      <div class="project-loop">
+        <strong>Project rhythm:</strong>
+        start with <code>/kb-scan</code> to recover prior decisions and open questions, use <code>/kb-project-init</code> when a substantive project has no KB entry, and end with <code>/kb-wrap</code> so decisions, status, and follow-ups are not trapped in chat.
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="section-title">
+        <h2>KB Skills And Meta-Skills</h2>
+        <p>These slash-style skills are agent workflows, but their behavior is defined against the shared KB schema, rules, and tools.</p>
+      </div>
+      <div class="cards">
+        <article class="card">
+          <span class="slash">/kb-ask</span>
+          <h3>Scoped KB session</h3>
+          <p>Query, browse, or discuss KB content using schema, rules, index, summaries, and Obsidian citations.</p>
+          <p class="use"><strong>Use when:</strong> you want an answer from the KB, topic browsing, or a research queue view.</p>
+        </article>
+        <article class="card">
+          <span class="slash">/kb-auto</span>
+          <h3>Headless autonomous ingestion</h3>
+          <p>Processes URL-first items under topic <code>## Auto-approved</code> sections one at a time, deduping before fetch and checkpointing aggressively.</p>
+          <p class="use"><strong>Use when:</strong> a cron or overnight unattended run should ingest pre-approved sources.</p>
+        </article>
+        <article class="card">
+          <span class="slash">/kb-ingest</span>
+          <h3>Single-source research session</h3>
+          <p>Fetches one URL or PDF, discusses it, surfaces connections, identifies concepts, and writes only when ready to commit.</p>
+          <p class="use"><strong>Use when:</strong> you want to actively explore one source instead of silently batch-processing it.</p>
+        </article>
+        <article class="card">
+          <span class="slash">/kb-lint</span>
+          <h3>Health check</h3>
+          <p>Audits a topic or all topics for broken links, orphan pages, missing stubs, frontmatter gaps, contradictions, stale sources, and media integrity.</p>
+          <p class="use"><strong>Use when:</strong> synthesis is done or a topic feels structurally messy.</p>
+        </article>
+        <article class="card">
+          <span class="slash">/kb-project-init</span>
+          <h3>New project entry</h3>
+          <p>Reads project source material and creates <code>projects/&lt;slug&gt;/_summary.md</code> from the standard project template.</p>
+          <p class="use"><strong>Use when:</strong> starting substantial work on a project with no KB entry yet.</p>
+        </article>
+        <article class="card">
+          <span class="slash">/kb-queue</span>
+          <h3>Batch reading-list processing</h3>
+          <p>Reads queued URLs or PDFs, presents an approval checklist, then ingests approved items with checkpoint and resume support.</p>
+          <p class="use"><strong>Use when:</strong> you want to work through a topic backlog or process multiple sources.</p>
+        </article>
+        <article class="card">
+          <span class="slash">/kb-scan</span>
+          <h3>Light orientation scan</h3>
+          <p>Reads the index and relevant project/topic summaries, then surfaces directly applicable decisions, constraints, and open questions.</p>
+          <p class="use"><strong>Use when:</strong> starting a work session on a named topic or project.</p>
+        </article>
+        <article class="card">
+          <span class="slash">/kb-synthesise</span>
+          <h3>Source notes to wiki</h3>
+          <p>Builds a concept/entity inventory, applies page thresholds, proposes a plan, then writes wiki notes and updates summaries.</p>
+          <p class="use"><strong>Use when:</strong> raw sources have accumulated after ingestion or queue work.</p>
+        </article>
+        <article class="card">
+          <span class="slash">/kb-wrap</span>
+          <h3>Session closeout</h3>
+          <p>Updates project summaries, captures new topic knowledge, records decisions and open questions, and appends to the KB log.</p>
+          <p class="use"><strong>Use when:</strong> a feature, investigation, or project session reaches a natural stopping point.</p>
+        </article>
+        <article class="card">
+          <span class="slash">$book-to-skill</span>
+          <h3>Source cluster to skill</h3>
+          <p>Evaluates books, long-form PDFs, article clusters, and external skill artifacts before any candidate skill is created or installed.</p>
+          <p class="use"><strong>Use when:</strong> source synthesis may justify a reusable agent procedure, critique checklist, or eval fixture.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="section-title">
+        <h2>Shared Helper Scripts</h2>
+        <p>These scripts are real scaffolding under <code>knowledgebase/_tools/</code>; skills call them instead of hand-editing queues or reimplementing transport logic.</p>
+      </div>
+      <div class="grid two">
+        <ul class="compact-list">
+          <li><strong><code>kb-prep-item.py</code></strong> - read-only pre-fetch prep: dedup, mirror rewrite, and optional media discovery.</li>
+          <li><strong><code>kb-checkoff.py</code></strong> - race-safe queue mutation under <code>.kb-write.lock</code>; updates allowed checkbox states and refreshes <code>_dive-queue.md</code>.</li>
+          <li><strong><code>kb-seen.py</code></strong> - canonical URL dedup from successful source-note <code>origin:</code> and <code>mirror:</code> frontmatter; failed ingests stay retryable.</li>
+          <li><strong><code>kb-derive-dive-queue.py</code></strong> - derives the read-only root research dashboard from topic <code>## Auto-approved</code> queues and <code>research-ideas.md</code>.</li>
+          <li><strong><code>kb-lint.py</code></strong> - structural lint engine for frontmatter, links, reading-list shape, topic files, and media checks.</li>
+        </ul>
+        <ul class="compact-list">
+          <li><strong><code>kb-media-capture.py</code></strong> - discovers and captures source media with provenance, hashing, license posture, and chrome filtering.</li>
+          <li><strong><code>kb-headless-capture.py</code></strong> - Playwright fallback for JS-rendered images and element screenshots when static scraping misses content.</li>
+          <li><strong><code>kb-tweet-fetch.py</code></strong> - fetches structured tweet or thread data through fxtwitter with retry/backoff behavior.</li>
+          <li><strong><code>kb-video-analyze.py</code></strong> - creates structured video ingestion artifacts using metadata, transcripts, keyframes, OCR, and optional summaries.</li>
+          <li><strong><code>kb-obsidian-cli.py</code></strong> - optional read-only bridge to the Obsidian CLI for diagnostics and searches when the desktop app is available.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="section-title">
+        <h2>KB Layout</h2>
+        <p>The live index lists topics, projects, note counts, source counts, and the latest ingestion date. Starter installs begin with a small scaffold and grow from there.</p>
+      </div>
+      <div class="grid two">
+        <div class="tree">knowledgebase/
+  _index.md
+  _log.md
+  _schema.md
+  _rules.md
+  _checkpoint.md
+  _dive-queue.md      # generated/read-only
+  _templates/
+  _media/
+    images/
+    videos/
+    audio/
+  topics/
+    &lt;topic&gt;/
+      _summary.md
+      reading-list.md
+      sources/
+      notes/
+        concepts/
+        entities/
+        media/
+        syntheses/
+  projects/
+    &lt;slug&gt;/
+      _summary.md
+      _todos.md
+      notes/</div>
+        <div class="panel">
+          <h3>Root Navigation</h3>
+          <p class="muted"><code>_index.md</code> is the top-level map. Agents read it first, then topic or project summaries. <code>_log.md</code> records operations. <code>_checkpoint.md</code> makes long operations resumable. <code>_schema.md</code> and <code>_rules.md</code> define the cross-agent contract.</p>
+          <br>
+          <h3>Topic Shape</h3>
+          <p class="muted">Each topic keeps raw source notes in <code>sources/</code>, wiki output in <code>notes/</code>, queued URLs in <code>reading-list.md</code>, and a compressed orientation file in <code>_summary.md</code>.</p>
+          <br>
+          <h3>Project Shape</h3>
+          <p class="muted">Projects live under <code>projects/&lt;slug&gt;/</code>. The summary captures LLM orientation and project direction, while <code>_todos.md</code> tracks project work.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="section-title">
+        <h2>Schema Essentials and Rules</h2>
+        <p>The rules are designed so multiple agents and scripts can work safely in the same vault.</p>
+      </div>
+      <div class="rules">
+        <article class="rule danger">
+          <h3>Rule 1: Authorship Guard</h3>
+          <p>Never create or modify anything outside <code>knowledgebase/</code>. Existing files must have <code>author: kb-bot</code> frontmatter before an agent writes them. When in doubt, do not write.</p>
+        </article>
+        <article class="rule warn">
+          <h3>Rule 18: Failed Fetches</h3>
+          <p>Do not blind-ingest errors, blank pages, wrong redirects, rate limits, or blocked responses. Log failures in source context and reading lists; use <code>ingest_status: failed</code> for retryable failed source records.</p>
+        </article>
+        <article class="rule">
+          <h3>Rule 29: Media</h3>
+          <p>Media discovered during ingestion is provenance. Source-note <code>media:</code> blocks are frozen at initial write; later OCR, transcripts, and analysis belong in separate <code>type: media-description</code> notes.</p>
+        </article>
+        <article class="rule">
+          <h3>Rule 30: Mirrors</h3>
+          <p>Some hosts are rewritten at fetch time. For example, <code>x.com</code> and <code>twitter.com</code> use fxtwitter-style mirrors. Keep the canonical URL in <code>origin:</code> and the actual transport URL in <code>mirror:</code>.</p>
+        </article>
+      </div>
+      <div class="band" style="margin-top: 12px;">
+        <h3>Note Types</h3>
+        <p class="muted">Core types include <code>source</code>, <code>concept</code>, <code>entity</code>, <code>synthesis</code>, <code>meta</code>, and project-oriented files such as <code>summary</code>, <code>todos</code>, and project notes. Concept and entity notes are the browsable wiki layer; synthesis notes are cross-cutting analyses.</p>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="section-title">
+        <h2>Dashboard Operations</h2>
+        <p>The dashboard is an attention console first. Live writes should arrive through explicit shared-tool actions, not browser-side Markdown editing.</p>
+      </div>
+      <div class="grid three">
+        <article class="panel">
+          <h3>Starter vs live app</h3>
+          <p class="muted">The starter repo ships the sanitized app scaffold. A local live copy can sit beside the vault and point at the real KB root. Shared code should stay mirrored.</p>
+        </article>
+        <article class="panel">
+          <h3>Safe action path</h3>
+          <p class="muted">First interactive buttons should call allowlisted tools such as lint, dive-queue regeneration, and locked checkoff commands with confirmation and logs.</p>
+        </article>
+        <article class="panel">
+          <h3>Skill handoffs</h3>
+          <p class="muted">Agent/skill execution should start as copyable handoff prompts. CLI launches need visible prompts, checkpoints, transcripts, cancel behavior, and post-run lint.</p>
+        </article>
+        <article class="panel">
+          <h3>Artifact review</h3>
+          <p class="muted">Cloneable Gists/repos should be checked in scratch, normalized, validated, and compared against KB synthesis before any install or starter inclusion.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    Independent system view
+  </footer>
+</body>
+</html>

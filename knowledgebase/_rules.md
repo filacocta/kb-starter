@@ -183,7 +183,7 @@ For **source notes** specifically, Rule 11 is the authoritative spec: only `stat
 
 Whenever a rabbit hole, follow-up idea, or "worth reading" source is identified during an ingestion session:
 
-1. Add URL-first or local-file source candidates to `topics/<topic>/reading-list.md` as unchecked items under the appropriate interactive section (`## Pending`, `## Queue`, or another topic-specific queue section). Do not also write them to `_dive-queue.md`.
+1. Add URL-first or local-file source candidates to `topics/<topic>/reading-list.md` as unchecked items under the appropriate canonical section ladder heading — `## Pending` if not yet vetted, `## Approved` if vetted for interactive ingestion (see the section-ladder spec in `_schema.md`; only these five level-2 headings are permitted: Pending, Approved, Auto-approved, Processed, Failed — Retry). Do not also write them to `_dive-queue.md`.
 2. Add prose-only rabbit holes, research questions, and investigation ideas with no exact source URL to `topics/<topic>/research-ideas.md`.
 3. Tag the note (if one exists) with `rabbit-hole`.
 4. Treat `_dive-queue.md` as generated/read-only output from `_tools/kb-derive-dive-queue.py`; agents and scripts must not append to it directly.

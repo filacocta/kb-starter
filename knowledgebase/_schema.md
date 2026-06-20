@@ -126,22 +126,40 @@ media: []         # source notes only: captured or discovered media items; see M
 
 ## Topic Reading Lists
 
-Topic reading lists are the canonical writable queues for source candidates. They may use topic-specific interactive sections such as `## Pending`, `## Queue`, `## Approved Exact URL Queue`, or project/batch headings. Agents may process those sections only after explicit interactive approval under Rule 4.
+Topic reading lists are the canonical writable queues for source candidates. Every ingestion item lives under one of **five canonical level-2 sections** — the *section ladder*. Ad-hoc ingestion headings (`## Queue`, `## Approved Exact URL Queue`, `## Original Source Targets`, `## Future / not yet fetched`, project/batch headings, etc.) are **not permitted**; `_tools/kb-lint.py` flags any non-canonical ingestion heading. This is a cross-agent contract: all LLMs and all `kb-*` skills follow the same ladder.
 
-`## Auto-approved` is a reserved level-2 section for headless ingestion. `/kb-auto` and other unattended agents may scan only this section, must stop at the next level-2 heading, and may process only unchecked URL-first or local-PDF lines. Other sections stay interactive even if they contain exact URLs. Do not duplicate the same URL across sections; move the item when promoting or demoting it.
+| Section | Meaning | Who may process it |
+|---|---|---|
+| `## Pending` | Captured but **not yet vetted**. Needs a human (or interactive agent) to confirm it is worth ingesting. | Triage / review only — not an ingestion lane |
+| `## Approved` | Vetted and good; will be ingested **interactively** (`/kb-queue`, `/kb-ingest`, human present). | Interactive agents after Rule 4 approval |
+| `## Auto-approved` | `## Approved` **and** explicitly cleared for **unattended headless** ingestion (`/kb-auto`, kb-feed trusted lane). A strict subset of Approved. | `/kb-auto` and other headless agents |
+| `## Processed` | Ingested. Items marked `[x]` with date + source-note path. | Terminal |
+| `## Failed — Retry` | Fetch/ingest failed; awaiting manual retry (Rule 18). | Interactive |
 
-Only the user, an interactive agent after explicit approval, or kb-feed under Rule 31's trusted-lane auto-approval policy may add items to `## Auto-approved`. Text-only items never belong in `## Auto-approved`.
+**Promotion is upward and explicit:** `Pending → Approved → Auto-approved`. Move an item between sections when promoting/demoting — never duplicate the same URL across sections.
+
+**The `## Auto-approved` gate.** Only the user, an interactive agent after explicit approval, or kb-feed under Rule 31's trusted-lane policy may place items here. Promote to `## Auto-approved` (rather than leaving in `## Approved`) only when the item is safe to fetch with **no human watching**: text-first, not paywalled, needs no interactive capture (OCR/video/figure selection/Wikipedia citation discovery), and comes from a trusted source. Everything else that is vetted stays in `## Approved` for interactive ingestion. `/kb-auto` and other unattended agents scan **only** `## Auto-approved`, stop at the next level-2 heading, and process only unchecked URL-first or local-PDF lines. Text-only items never belong in `## Auto-approved`.
+
+Sub-grouping within a canonical section uses level-3 (`###`) headings (e.g. `### Foundational papers` under `## Pending`), which keeps the level-2 ladder intact for tooling. Non-ingestion material (prose rabbit holes, research questions) belongs in `research-ideas.md`, not the reading list.
 
 Example:
 
 ```markdown
-## Auto-approved
-
-- [ ] https://example.com/source.pdf — approved for the next unattended `/kb-auto` pass
-
 ## Pending
 
-- [ ] https://example.com/needs-discussion — requires interactive approval before fetch
+- [ ] https://example.com/needs-triage — captured via #unfiltered, topic unconfirmed
+
+## Approved
+
+- [ ] https://example.com/paywalled-pdf — vetted; ingest interactively (needs login capture)
+
+## Auto-approved
+
+- [ ] https://example.com/source.pdf — vetted and headless-safe; next unattended `/kb-auto` pass
+
+## Processed
+
+## Failed — Retry
 ```
 
 ---

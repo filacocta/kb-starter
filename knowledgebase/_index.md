@@ -1,7 +1,7 @@
 ---
 author: kb-bot
 created: 2026-04-13
-modified: 2026-04-13
+modified: 2026-06-17
 type: index
 ---
 
@@ -23,18 +23,20 @@ For structural conventions and rules, see [[knowledgebase/_schema]] and [[knowle
 
 ## Projects
 
-| Project | Summary | Last updated |
-|---|---|---|
-| [[knowledgebase/projects/kb-feed|kb-feed]] | [[knowledgebase/projects/kb-feed/_summary]] | 2026-06-16 |
-| [[knowledgebase/projects/kb-workflow-dashboard|kb-workflow-dashboard]] | [[knowledgebase/projects/kb-workflow-dashboard/_summary]] | 2026-06-16 |
+The starter includes optional project scaffolds for workflow tools shipped in this repository. They are not active user projects until the installer configures and runs them locally.
+
+| Project | Summary | Status | Last updated |
+|---|---|---|---|
+| [[knowledgebase/projects/kb-feed|kb-feed]] | [[knowledgebase/projects/kb-feed/_summary]] | optional scaffold | 2026-06-16 |
+| [[knowledgebase/projects/kb-workflow-dashboard|kb-workflow-dashboard]] | [[knowledgebase/projects/kb-workflow-dashboard/_summary]] | optional scaffold | 2026-06-17 |
 
 ---
 
 ## KB Statistics
 
 - Topics: 1
-- Projects: 2
-- Total notes: 7
+- Projects: 2 optional scaffolds
+- Total notes: 8
 - Total sources ingested: 6
 - Last ingestion: 2026-04-10
 

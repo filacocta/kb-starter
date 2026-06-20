@@ -46,3 +46,25 @@ def test_checkoff_can_route_original_item_to_ideas_backlog(tmp_path: Path) -> No
     backlog_text = backlog.read_text(encoding="utf-8")
     assert "- [ ] build a tiny workflow dashboard" in backlog_text
     assert "routed from `readinglist/topics.md` line 1" in backlog_text
+
+
+def test_checkoff_can_mark_active_item_done(tmp_path: Path) -> None:
+    checkoff = load_checkoff_module()
+    kb_root = tmp_path / "kb"
+    backlog = kb_root / "ideas" / "_backlog.md"
+    backlog.parent.mkdir(parents=True)
+    backlog.write_text("- [~] create skills from books\n", encoding="utf-8")
+
+    ok, msg = checkoff.checkoff(
+        backlog,
+        "skills from books",
+        "x",
+        "completed with source notes",
+        kb_root / ".kb-write.lock",
+        kb_root=kb_root,
+        from_mark="~",
+    )
+
+    assert ok is True
+    assert "line 1" in msg
+    assert "- [x] create skills from books — completed with source notes" in backlog.read_text(encoding="utf-8")

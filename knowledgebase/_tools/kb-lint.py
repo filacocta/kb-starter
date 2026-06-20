@@ -44,12 +44,15 @@ TITLE_TYPES = {
 
 STATUS_TYPES = {"source", "concept", "entity", "media-description", "synthesis", "output", "prospects"}
 TOPIC_TYPES = {"source", "concept", "entity", "media-description", "synthesis", "output", "summary", "prospects", "research-ideas"}
-SKIP_DIRS = {"clippings", "readinglist", "_media", "_tools", "__pycache__", ".git", ".codex", ".agents"}
+SKIP_DIRS = {"clippings", "readinglist", "_media", "_tools", "__pycache__", ".pytest_cache", ".git", ".codex", ".agents"}
 VALID_LINK_ROOTS = {"knowledgebase", "topics", "notes", "sources", "projects"}
 WIKILINK_RE = re.compile(r"!?\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]")
 URL_RE = re.compile(r"https?://[^\s\"'<>)\]]+")
-READING_ITEM_RE = re.compile(r"^\s*-\s+\[[ xX!~?]\]\s+")
+READING_ITEM_STATUS_RE = re.compile(r"^\s*-\s+\[([ xX!~?])\]\s+")
 LEVEL_2_HEADING_RE = re.compile(r"^##\s+(.+?)\s*$")
+
+# Canonical reading-list section ladder (cross-agent contract; see _schema.md "Topic Reading Lists").
+CANONICAL_READING_SECTIONS = ("Pending", "Approved", "Auto-approved", "Processed", "Failed — Retry")
 
 
 def rel(path: Path, kb_root: Path) -> str:
@@ -291,24 +294,49 @@ def check_reading_lists(kb_root: Path, topic: str | None, findings: list[dict[st
         lines = path.read_text(encoding="utf-8").splitlines()
         urls_by_norm: dict[str, list[tuple[str, int, str]]] = {}
 
+        # Enforce the canonical section ladder (see _schema.md "Topic Reading Lists").
+        # Only these five level-2 headings are permitted in a reading list; sub-grouping
+        # uses level-3 (###) headings inside them. Non-ingestion prose goes to research-ideas.md.
         for index, line in enumerate(lines):
-            if not READING_ITEM_RE.match(line):
+            heading = LEVEL_2_HEADING_RE.match(line)
+            if not heading:
                 continue
+            name = heading.group(1).strip()
+            if name not in CANONICAL_READING_SECTIONS:
+                add(
+                    findings,
+                    "warning",
+                    "reading-list-noncanonical-section",
+                    file_rel,
+                    f"Non-canonical reading-list section '## {name}'. Allowed level-2 headings: "
+                    f"{', '.join(CANONICAL_READING_SECTIONS)}. Use ### sub-headings inside these, "
+                    f"and move prose/research questions to research-ideas.md.",
+                    index + 1,
+                )
+
+        for index, line in enumerate(lines):
+            item_match = READING_ITEM_STATUS_RE.match(line)
+            if not item_match:
+                continue
+            status = item_match.group(1).lower()
             section, _ = _section_for_line(lines, index)
-            for url in URL_RE.findall(line):
-                normalized = kb_seen.normalize(url)
-                urls_by_norm.setdefault(normalized, []).append((url, index + 1, section))
-                if section.lower() == "auto-approved":
-                    source_note = kb_seen.is_ingested(url, kb_root, seen_index)
-                    if source_note:
-                        add(
-                            findings,
-                            "warning",
-                            "auto-approved-already-ingested",
-                            file_rel,
-                            f"Auto-approved URL already ingested as {source_note}: {url}",
-                            index + 1,
-                        )
+            urls = URL_RE.findall(line)
+            if not urls:
+                continue
+            primary_url = urls[0]
+            normalized = kb_seen.normalize(primary_url)
+            urls_by_norm.setdefault(normalized, []).append((primary_url, index + 1, section))
+            if section.lower() == "auto-approved" and status != "x":
+                source_note = kb_seen.is_ingested(primary_url, kb_root, seen_index)
+                if source_note:
+                    add(
+                        findings,
+                        "warning",
+                        "auto-approved-already-ingested",
+                        file_rel,
+                        f"Auto-approved URL already ingested as {source_note}: {primary_url}",
+                        index + 1,
+                    )
 
         for normalized, hits in sorted(urls_by_norm.items()):
             sections = {section for _, _, section in hits}
