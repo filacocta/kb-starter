@@ -1,7 +1,7 @@
 ---
 author: kb-bot
 created: 2026-04-09
-modified: 2026-06-03
+modified: 2026-06-19
 type: meta
 ---
 
@@ -154,6 +154,8 @@ The following narrow lifecycle changes are permitted after first write:
 3. **Citing wiki notes:** update mutable wiki notes that cite the deprecated source so they reflect the correction. Those edits follow the normal authorship guard.
 
 Deletion remains forbidden under Rule 10. The `media:` block on a source note remains frozen under Rule 29 (in `_rules-media.md`).
+
+**Rehoming exception:** A source note may be moved from one topic folder to a better-fit topic folder when its original topic placement was wrong or a new topic has been explicitly approved. The source-note body must remain unchanged. The only permitted edits during rehoming are path movement, `topic:` frontmatter correction, vault-rooted wikilink updates that point to the moved note or its topic-local catalog, and log/index/summary updates needed to preserve navigation. Rehoming must be checkpointed and logged, and the old path must not be left as a broken wikilink target.
 
 ## Rule 12 — Incremental Compilation
 
@@ -562,7 +564,7 @@ Rule 29 (Media Capture and Enrichment) and Rule 30 (Web Host Mirroring) have mov
 
 ## Rule 31 — Telegram-Origin Capture Entries
 
-kb-feed may write capture entries submitted through the user's private Telegram supergroup into KB queue files, provided all of these conditions are true:
+kb-feed may write capture entries submitted through Brendan's private Telegram supergroup into KB queue files, provided all of these conditions are true:
 
 1. The message came from the configured allowed chat and an allowlisted Telegram user.
 2. The target lane was resolved from a persisted `message_thread_id -> topic_slug` mapping.
@@ -589,3 +591,17 @@ Lane behaviour:
 6. **Unmapped thread:** Do not append anything to KB markdown. kb-feed may record the event in its own local SQLite state and reply asking for a mapping.
 
 This rule does not authorize fetching Telegram URLs, searching the web, downloading attachments, or processing non-text attachments. It also does not relax Rule 1: kb-feed may only write files with `author: kb-bot` frontmatter. A Telegram-origin item becomes pre-approved for headless ingestion only when it is intentionally placed in a topic reading list's `## Auto-approved` section under the trusted-lane rule above; ordinary topic reading-list entries and global inbox entries still follow the normal assignment and ingestion rules.
+
+---
+
+## Rule 32 — Long-Form Source Library
+
+`knowledgebase/_library/books/` is the canonical custody area for raw long-form source files such as local PDFs, EPUBs, scanned books, and article-length dumps that are intentionally brought into the KB workflow. `knowledgebase/_library/docs/` is the equivalent custody area for non-book PDFs, reports, schedules, reference documents, and similar local source files.
+
+Raw files in `_library/books/` and `_library/docs/` are not source notes and are not themselves the citation surface for synthesized KB claims. Topic source notes remain Markdown files under `topics/<topic>/sources/`; they should cite the original URL or local file path in `origin:` and summarize only the portion that was actually ingested for that topic. If a book or document supports multiple topics, keep one raw custody file in `_library/` and create separate topic-specific source notes or extract notes as needed.
+
+Binary files under `_library/books/` and `_library/docs/` are exempt from `author: kb-bot` frontmatter because they cannot carry YAML. Every Markdown control file in `_library/` still requires normal kb-bot frontmatter. Do not duplicate raw sources into topic folders or `_media/`; `_media/` is for captured images, video, and audio attached to source notes.
+
+Agents must preserve custody history when moving files into `_library/`: record the prior path when known, update queues/catalogs to the canonical KB path when those files are mutable, and keep extraction status separate from custody status. A source being stored in `_library/` means "available for pipeline use," not "fully ingested."
+
+Raw books, licensed PDFs, and private source documents are local KB contents. They must not be added to GitHub forks, public starter/skeleton repositories, or GitLab mirrors unless the user explicitly approves a sanitized subset and redistribution is lawful. Derived Markdown source notes, extraction notes, syntheses, schemas, and tooling may be pushed when otherwise appropriate. The raw payload directories under `_library/books/` and `_library/docs/` should be pushed unpopulated: keep README placeholders and directory conventions, but do not track Brendan's private source files.

@@ -57,8 +57,30 @@ def append_topic_auto_approved(path: Path, line: str, today: date | None = None)
     return True
 
 
-def append_dive_queue(path: Path, topic_slug: str, line: str, today: date | None = None) -> bool:
-    return _append_under_heading(path, f"## {topic_slug}", line, today=today)
+def append_research_idea(path: Path, topic_slug: str, line: str, today: date | None = None) -> bool:
+    """Append a prose idea under `## Ideas` in a topic's research-ideas.md, creating the file if absent.
+
+    `_dive-queue.md` is generated/read-only (Rule 13); prose-only topic ideas belong here instead.
+    """
+    if not path.exists():
+        value = (today or date.today()).isoformat()
+        scaffold = (
+            "---\n"
+            "author: kb-bot\n"
+            f"created: {value}\n"
+            f"modified: {value}\n"
+            "type: research-ideas\n"
+            f"topic: {topic_slug}\n"
+            f'title: "{topic_slug} - Research Ideas"\n'
+            f'description: "Prose-only rabbit holes and research questions for the {topic_slug} topic."\n'
+            "---\n\n"
+            f"# {topic_slug} - Research Ideas\n\n"
+            "Prose-only rabbit holes and research questions. Add exact URLs to `reading-list.md` instead.\n\n"
+            "## Ideas\n"
+        )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write_text(path, scaffold)
+    return _append_under_heading(path, "## Ideas", line, today=today)
 
 
 def append_review_queue(path: Path, line: str, today: date | None = None) -> bool:
@@ -124,7 +146,7 @@ def _insert_topic_queue_heading(lines: list[str]) -> int:
     if insert_at > 0 and lines[insert_at - 1] != "":
         block.append("")
     heading_index = insert_at + len(block)
-    block.extend(["## Queue", ""])
+    block.extend(["## Pending", ""])
     lines[insert_at:insert_at] = block
     return heading_index
 

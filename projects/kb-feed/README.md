@@ -59,17 +59,18 @@ The aim is a calm, recoverable pipeline: nothing in the KB happens without an au
                                                                               v
                                                                 +--------------------------+
                                                                 | KB markdown queues       |
-                                                                |  topics/<slug>/reading-list.md  |
-                                                                |  _dive-queue.md          |
+                                                                |  topics/<slug>/reading-list.md   |
+                                                                |  topics/<slug>/research-ideas.md |
                                                                 |  readinglist/Links.md    |
                                                                 |  readinglist/topics.md   |
+                                                                |  (_dive-queue.md = regen, R/O)   |
                                                                 +--------------------------+
 
                                                               ^
                                                               |
                                             +-----------------------------------+
                                             | kb-feed digest weekly             |
-                                            | (agent CLI, proposals + DM)      |
+                                            | (Claude CLI, proposals + DM)      |
                                             +-----------------------------------+
 ```
 
@@ -95,7 +96,7 @@ The aim is a calm, recoverable pipeline: nothing in the KB happens without an au
 
 1. **Intake (`poll`)** — long-polling subscribes to the bot's updates. Each message in the configured chat is filtered by allowed user, mapped via `message_thread_id`, URL-validated (scheme, DNS, public IP, normalisation), and enqueued into `outbox` (URLs) or `capture_outbox` (text notes).
 2. **Flush (`outbox flush`)** — the writer claims pending rows, appends them to the matching KB markdown files, marks them written, and optionally stages and commits the touched files as `kb-bot <noreply@kb-feed.local>`.
-3. **Weekly digest (`digest weekly`)** — optional. Monday around 10:00, agent CLI reviews accumulated unfiltered links, topic reading-list links, and inspiration notes using a kb-feed queue packet. Output is a markdown proposal under `~/.local/state/kb-feed/proposals/`; the timer can also DM a concise summary to allowed Telegram users. The default Claude invocation runs in plan mode with read/write/fetch tools explicitly denied, so the digest cannot modify the KB or fetch URLs.
+3. **Weekly digest (`digest weekly`)** — optional. Monday around 10:00, Claude CLI reviews accumulated unfiltered links, topic reading-list links, and inspiration notes using a kb-feed queue packet. Output is a markdown proposal under `~/.local/state/kb-feed/proposals/`; the timer can also DM a concise summary to allowed Telegram users. The default Claude invocation runs in plan mode with read/write/fetch tools explicitly denied, so the digest cannot modify the KB or fetch URLs.
 
 ---
 
@@ -254,7 +255,7 @@ You post a URL inside a mapped topic thread. End-to-end:
 2. `process_message` reads `message_thread_id`, looks up `topic_map`, and extracts URLs from Telegram `MessageEntity` payloads (not regex).
 3. Each URL goes through `normalize_url`: scheme must be `http`/`https`; hostname is resolved via `socket.getaddrinfo`; addresses in private, loopback, link-local, carrier-NAT, or cloud-metadata ranges are rejected. Tracking params (`utm_*`, `fbclid`, etc.) are stripped. Twitter/X is normalised to `x.com` (canonical) but the `fetch_url` becomes `fxtwitter.com` for nice unfurls in dive sessions.
 4. `enqueue_unseen_url` does the dedup + enqueue in one SQLite transaction. If the Telegram message includes note text around the URL, that note is preserved on the outbox row. New rows are attached to a queue batch so the confirmation's `Undo` button and reply-based `/kbundo` can cancel them before flush. Duplicates are reported with a `Already queued.` reply and never re-enqueued.
-5. A flush later picks up the row, appends `- [ ] <url> — (via Telegram #<slug>, YYYY-MM-DD)` to `topics/<slug>/reading-list.md` under the `## Queue` heading, and marks the row written. If note text exists, the line becomes `- [ ] <url> — <note> — (via Telegram #<slug>, YYYY-MM-DD)`.
+5. A flush later picks up the row, appends `- [ ] <url> — (via Telegram #<slug>, YYYY-MM-DD)` to `topics/<slug>/reading-list.md` under the `## Pending` heading (or `## Auto-approved` when that lane sets `auto_approve = true`), and marks the row written. If note text exists, the line becomes `- [ ] <url> — <note> — (via Telegram #<slug>, YYYY-MM-DD)`.
 6. If `--commit` was passed (and either `--force-commit` or debounce rules let it through), kb-feed runs `git add` on the touched files and commits with identity `kb-bot <noreply@kb-feed.local>`. Commits include a body listing each captured outbox/capture row for audit.
 
 Normal topic URLs do **not** automatically go into `_dive-queue.md`. They are source candidates in the topic reading list. Rule 31 in `~/Vault/knowledgebase/_rules.md` authorises this capture shape.
@@ -263,13 +264,13 @@ Normal topic URLs do **not** automatically go into `_dive-queue.md`. They are so
 
 ## Normal topic idea flow
 
-If you post text without a URL inside a normal mapped topic thread, kb-feed treats it as a topic-specific idea, research question, or project seed. A flush writes it to `_dive-queue.md` under that topic:
+If you post text without a URL inside a normal mapped topic thread, kb-feed treats it as a topic-specific idea, research question, or project seed. A flush writes it to `topics/<slug>/research-ideas.md` under `## Ideas` (creating the file if absent):
 
 ```markdown
 - [ ] <idea text> — (via Telegram #<topic>, YYYY-MM-DD)
 ```
 
-This is the lane for “investigate this later” thoughts that already have a topic home. It creates an investigation target; it does not fetch anything.
+This is the lane for “investigate this later” thoughts that already have a topic home. It creates an investigation target; it does not fetch anything. `_dive-queue.md` is generated/read-only (Rule 13) — prose ideas never land there directly.
 
 ---
 
@@ -357,7 +358,7 @@ Inspect the queue:
 
 ## LLM triage
 
-The preferred agent path is a weekly digest through agent CLI, not frequent single-lane DeepSeek triage.
+The preferred agent path is a weekly digest through Claude CLI, not frequent single-lane DeepSeek triage.
 
 ### Weekly digest
 
@@ -369,7 +370,7 @@ The preferred agent path is a weekly digest through agent CLI, not frequent sing
 - Reads unchecked URL items from every `topics/<topic>/reading-list.md`.
 - Reads unchecked text notes from `readinglist/topics.md`.
 - Discovers existing KB topics by scanning `~/Vault/knowledgebase/topics/*/`.
-- Sends the queue packet to agent CLI over stdin. By default, this uses plan mode with read/write/fetch tools explicitly denied, slash commands disabled, a strict empty MCP config, a temporary empty working directory, and a scrubbed environment so Telegram-sourced prompt text cannot trigger file edits, shell commands, MCP tools, web fetching, or process-list prompt exposure.
+- Sends the queue packet to Claude CLI over stdin. By default, this uses plan mode with read/write/fetch tools explicitly denied, slash commands disabled, a strict empty MCP config, a temporary empty working directory, and a scrubbed environment so Telegram-sourced prompt text cannot trigger file edits, shell commands, MCP tools, web fetching, or process-list prompt exposure.
 - Asks Claude to produce a concise review: existing-topic assignments, possible new topic folders, ingest priorities, and deferred/unclear items.
 - Writes a human-readable proposal to `~/.local/state/kb-feed/proposals/weekly-digest-YYYYMMDD-HHMMSS.md`.
 - With `--send-telegram`, DMs the concise summary to allowed Telegram users.
@@ -402,7 +403,7 @@ Approval / decision commands:
 /kbingest the two highest-priority rockhounding links
 ```
 
-These commands send your decision plus the latest saved digest back through agent CLI. The bot replies with a concise follow-up and writes `weekly-digest-reply-YYYYMMDD-HHMMSS.md`. They do not modify the KB; apply commands and KB ingest remain explicit follow-up steps.
+These commands send your decision plus the latest saved digest back through Claude CLI. The bot replies with a concise follow-up and writes `weekly-digest-reply-YYYYMMDD-HHMMSS.md`. They do not modify the KB; apply commands and KB ingest remain explicit follow-up steps.
 
 For day-to-day use, you only need to remember:
 
@@ -429,18 +430,18 @@ These are not the recommended scheduled path anymore. They write proposal markdo
 
 | Env var | Default | Notes |
 |---|---|---|
-| `KB_FEED_CLAUDE_CMD` | auto-discovered `claude -p --permission-mode plan --disallowedTools Bash,Edit,Glob,Grep,LS,MultiEdit,NotebookEdit,NotebookRead,Read,Task,TodoWrite,WebFetch,WebSearch,Write --disable-slash-commands --strict-mcp-config --mcp-config '{"mcpServers":{}}' --no-session-persistence` | Command used for weekly digest and digest replies. Override only if systemd cannot find agent CLI or you want different safe flags. |
+| `KB_FEED_CLAUDE_CMD` | auto-discovered `claude -p --permission-mode plan --disallowedTools Bash,Edit,Glob,Grep,LS,MultiEdit,NotebookEdit,NotebookRead,Read,Task,TodoWrite,WebFetch,WebSearch,Write --disable-slash-commands --strict-mcp-config --mcp-config '{"mcpServers":{}}' --no-session-persistence` | Command used for weekly digest and digest replies. Override only if systemd cannot find Claude CLI or you want different safe flags. |
 | `KB_FEED_LLM_PROVIDER` | `deepseek` | Any value works; non-default needs the next three. |
 | `KB_FEED_LLM_API_BASE` | `https://api.deepseek.com` | OpenAI-compatible base URL |
 | `KB_FEED_LLM_MODEL` | `deepseek-v4-flash` | DeepSeek V4 Flash model id |
 | `KB_FEED_LLM_API_KEY` | falls back to `DEEPSEEK_API_KEY` if provider is `deepseek` | Required only for legacy `triage` commands |
 | `KB_FEED_LLM_TIMEOUT` | `60` | Seconds |
 
-Legacy triage fails gracefully when no API key is set: it prints `triage skipped: ...` and exits with status `2`. The weekly digest does not use DeepSeek or the OpenAI-compatible LLM client; it shells out to agent CLI.
+Legacy triage fails gracefully when no API key is set: it prints `triage skipped: ...` and exits with status `2`. The weekly digest does not use DeepSeek or the OpenAI-compatible LLM client; it shells out to Claude CLI.
 
 ### Safety guarantees
 
-- Weekly digest/reply runs agent CLI in plan mode with read/write/fetch tools explicitly denied, slash commands disabled, and a strict empty MCP config by default. The prompt is passed on stdin, not as a command-line argument. The subprocess runs from a temporary empty directory with a scrubbed environment. Output goes to `~/.local/state/kb-feed/proposals/`; the default digest path cannot write files, run shell commands, call MCP tools, or fetch URLs.
+- Weekly digest/reply runs Claude CLI in plan mode with read/write/fetch tools explicitly denied, slash commands disabled, and a strict empty MCP config by default. The prompt is passed on stdin, not as a command-line argument. The subprocess runs from a temporary empty directory with a scrubbed environment. Output goes to `~/.local/state/kb-feed/proposals/`; the default digest path cannot write files, run shell commands, call MCP tools, or fetch URLs.
 - Digest packets truncate very long queue items, and `/kbreply` rejects very long decision messages.
 - Legacy triage uses the API client directly and writes proposal files only. It is optional and disabled unless you run the commands/timers and configure an API key.
 - kb-feed itself does not fetch URLs. The agent reasons from URL strings, captured notes, and the topic list only.
@@ -463,9 +464,9 @@ Assign one `readinglist/Links.md` URL to an existing topic reading list:
   --reason "short note explaining why it belongs here"
 ```
 
-This appends the URL to `topics/<topic>/reading-list.md` and marks the source inbox line checked. Add `--dive` only when the URL is also an intentional investigation target for `_dive-queue.md`.
+This appends the URL to `topics/<topic>/reading-list.md` (under `## Pending`) and marks the source inbox line checked.
 
-Promote one broad inspiration note into a topic dive queue:
+Promote one broad inspiration note into a topic's research ideas:
 
 ```bash
 .venv/bin/kb-feed review promote-inspiration \
@@ -476,7 +477,7 @@ Promote one broad inspiration note into a topic dive queue:
   --idea "Rewritten research question or project seed"
 ```
 
-This appends a topic-specific item to `_dive-queue.md` and marks the source `readinglist/topics.md` note checked. It does not fetch sources or create new topics.
+This appends a topic-specific item to `topics/<topic>/research-ideas.md` (under `## Ideas`) and marks the source `readinglist/topics.md` note checked. It does not fetch sources or create new topics.
 
 ---
 
@@ -601,7 +602,7 @@ systemctl --user enable --now kb-feed-poll.service
 systemctl --user enable --now kb-feed-flush.timer
 ```
 
-Optional weekly digest path (no live KB writes; requires working agent CLI auth):
+Optional weekly digest path (no live KB writes; requires working Claude CLI auth):
 
 ```bash
 systemctl --user enable --now kb-feed-digest-weekly.timer
@@ -627,7 +628,7 @@ systemctl --user list-timers 'kb-feed-*'
 To allow systemd user units to keep running after logout (useful on the laptop):
 
 ```bash
-loginctl enable-linger $USER
+loginctl enable-linger brendan
 ```
 
 ---
@@ -646,7 +647,7 @@ The optional weekly review path is operational when:
 
 - `kb-feed-digest-weekly.timer` is active; it runs Monday at 10:00 local time.
 - `kb-feed-digest-reminder.timer` is active; it checks snoozed reminders every 15 minutes.
-- agent CLI is authenticated and visible either through `PATH`, an auto-discovered `~/.nvm/versions/node/*/bin/claude`, or `KB_FEED_CLAUDE_CMD`.
+- Claude CLI is authenticated and visible either through `PATH`, an auto-discovered `~/.nvm/versions/node/*/bin/claude`, or `KB_FEED_CLAUDE_CMD`.
 - The Claude command keeps the proposal-only safety flags unless you intentionally override them.
 - You have opened a DM with the bot at least once, so Telegram allows the bot to DM you.
 
@@ -688,7 +689,7 @@ type: meta
 ---
 # Obsidian Reading List
 
-## Queue
+## Pending
 EOF
 cat <<'EOF' > /tmp/kb-fixture/_dive-queue.md
 ---
@@ -733,8 +734,8 @@ Inspect the resulting git diff, then enable the timer.
 | Flush/review refuses with "Another KB markdown writer is already running" | Lock at `<kb-root>/.kb-write.lock` is held | Check for active kb-feed or KB checkoff processes; remove the lock only if no process holds it |
 | Poller hangs / no replies | Telegram token wrong, privacy mode on, or bot not in chat | Check `journalctl --user-unit kb-feed-poll.service -e`, re-disable privacy via BotFather, re-add bot to chat |
 | `kb-feed: error: TELEGRAM_BOT_TOKEN is required` | `credentials.env` missing or not loaded | `source ~/.config/kb-feed/credentials.env` (or rely on systemd `EnvironmentFile=`) |
-| `triage skipped`: No LLM API key configured | `DEEPSEEK_API_KEY` (or `KB_FEED_LLM_API_KEY`) missing | Add only if using legacy triage. The weekly digest uses agent CLI instead. |
-| Weekly digest fails with "agent CLI not found" | `claude` is not on the systemd PATH and no `~/.nvm/versions/node/*/bin/claude` exists | Set `KB_FEED_CLAUDE_CMD` in `~/.config/kb-feed/credentials.env` to the full safe command, e.g. `/path/to/claude -p --permission-mode plan --disallowedTools Bash,Edit,Glob,Grep,LS,MultiEdit,NotebookEdit,NotebookRead,Read,Task,TodoWrite,WebFetch,WebSearch,Write --disable-slash-commands --strict-mcp-config --mcp-config '{"mcpServers":{}}' --no-session-persistence` |
+| `triage skipped`: No LLM API key configured | `DEEPSEEK_API_KEY` (or `KB_FEED_LLM_API_KEY`) missing | Add only if using legacy triage. The weekly digest uses Claude CLI instead. |
+| Weekly digest fails with "Claude CLI not found" | `claude` is not on the systemd PATH and no `~/.nvm/versions/node/*/bin/claude` exists | Set `KB_FEED_CLAUDE_CMD` in `~/.config/kb-feed/credentials.env` to the full safe command, e.g. `/path/to/claude -p --permission-mode plan --disallowedTools Bash,Edit,Glob,Grep,LS,MultiEdit,NotebookEdit,NotebookRead,Read,Task,TodoWrite,WebFetch,WebSearch,Write --disable-slash-commands --strict-mcp-config --mcp-config '{"mcpServers":{}}' --no-session-persistence` |
 | Weekly digest DM never arrives | Bot has not had a DM opened with that user, token is wrong, or no allowed users exist in state/config | Send `/start` to the bot in Telegram, check `kb-feed user list`, then inspect `journalctl --user-unit kb-feed-digest-weekly.service -e` |
 | Digest proposes a topic that does not exist | Expected | It is only a proposal. Create the topic through normal KB workflow if the cluster is worth promoting. |
 
@@ -774,7 +775,7 @@ If the state DB ever gets into a confusing state, the safe reset is:
 1. Post a URL inside the matching topic thread. The bot replies in seconds with `Queued 1 URL(s) for <topic>.` plus an `Undo` button (or `Already queued.`).
 2. If you pasted into the wrong thread, press `Undo`, reply `/kbundo` to your original message, or reply `/kbundo` to the bot's queue confirmation before the flush timer writes it.
 3. The flush timer (every 2 minutes) writes pending queue rows to KB markdown, commits, and pushes nothing — you push the KB repo manually when you want.
-4. Post a text-only idea inside a matching topic thread when the idea already belongs to that topic. It lands in `_dive-queue.md`.
+4. Post a text-only idea inside a matching topic thread when the idea already belongs to that topic. It lands in that topic's `research-ideas.md`.
 5. For half-baked URLs you haven't classified, post them in the `unfiltered` topic.
 6. For broad cross-topic thoughts or ideas without a clear KB home, post them in the `inspiration-capture` topic.
 7. Monday around 10:00, the weekly digest proposes existing-topic assignments, possible new topic folders, ingest priorities, and deferred items. Use `/kbremind 3h` or `/kbremind tomorrow` if you are busy, or `/kbdigest` to run it manually.
@@ -782,4 +783,4 @@ If the state DB ever gets into a confusing state, the safe reset is:
 9. Apply accepted queue moves with `kb-feed review assign-link` or `kb-feed review promote-inspiration`; source ingestion still happens through the normal KB agent workflow.
 10. Check `git -C ~/Vault/knowledgebase log --author=kb-bot --since=yesterday` if you want to see what kb-feed added.
 
-The contract: kb-feed only modifies KB queue files (`topics/*/reading-list.md`, `_dive-queue.md`, `readinglist/Links.md`, `readinglist/topics.md`) with the `kb-bot` author guard. Anything else is yours.
+The contract: kb-feed only modifies KB queue files (`topics/*/reading-list.md`, `topics/*/research-ideas.md`, `readinglist/Links.md`, `readinglist/topics.md`) with the `kb-bot` author guard, and regenerates `_dive-queue.md` read-only after a flush. Anything else is yours.

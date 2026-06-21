@@ -55,16 +55,16 @@ def test_normalize_url_strips_tracking_fragment_and_trailing_slash() -> None:
 
 def test_normalize_url_equates_x_and_fxtwitter_for_dedup() -> None:
     x_record = normalize_url(
-        "https://x.com/exampleuser/status/1?utm_campaign=test",
+        "https://x.com/brendan/status/1?utm_campaign=test",
         resolver=_resolver("104.244.42.1"),
     )
     fx_record = normalize_url(
-        "https://fxtwitter.com/exampleuser/status/1",
+        "https://fxtwitter.com/brendan/status/1",
         resolver=_resolver("104.244.42.1"),
     )
 
     assert x_record.normalized_url == fx_record.normalized_url
-    assert x_record.fetch_url == "https://fxtwitter.com/exampleuser/status/1"
+    assert x_record.fetch_url == "https://fxtwitter.com/brendan/status/1"
 
 
 def test_normalize_url_rejects_private_resolution() -> None:

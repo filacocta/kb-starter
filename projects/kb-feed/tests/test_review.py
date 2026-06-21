@@ -38,7 +38,7 @@ def _build_kb(tmp_path):
         "modified: 2026-05-01\n"
         "---\n\n"
         "# Rockhounding Reading List\n\n"
-        "## Queue\n",
+        "## Pending\n",
         encoding="utf-8",
     )
     (kb_root / "_dive-queue.md").write_text(
@@ -64,32 +64,16 @@ def test_assign_link_moves_unfiltered_url_to_topic_reading_list_and_marks_source
     )
 
     assert result.added_reading_list is True
-    assert result.added_dive_queue is False
+    assert result.added_research_idea is False
     reading_list = (kb_root / "topics" / "rockhounding" / "reading-list.md").read_text(encoding="utf-8")
     assert "- [ ] https://example.com/mineral — (via Telegram #unfiltered, 2026-05-31)" in reading_list
     inbox = (kb_root / "readinglist" / "Links.md").read_text(encoding="utf-8")
     assert "- [x] https://example.com/mineral — (via Telegram #unfiltered, 2026-05-31) — assigned to rockhounding 2026-06-01" in inbox
+    # assign_link must never touch the generated/read-only dive queue.
+    assert "https://example.com/mineral" not in (kb_root / "_dive-queue.md").read_text(encoding="utf-8")
 
 
-def test_assign_link_can_also_add_intentional_dive_queue_item(tmp_path) -> None:
-    kb_root = _build_kb(tmp_path)
-
-    result = assign_link(
-        kb_root,
-        url="https://example.com/mineral",
-        topic_slug="rockhounding",
-        reason="investigate claim about mineral fluorescence",
-        add_to_dive_queue=True,
-        today=date(2026, 6, 1),
-    )
-
-    assert result.added_reading_list is True
-    assert result.added_dive_queue is True
-    dive_queue = (kb_root / "_dive-queue.md").read_text(encoding="utf-8")
-    assert "- [ ] https://example.com/mineral — investigate claim about mineral fluorescence" in dive_queue
-
-
-def test_promote_inspiration_adds_dive_queue_item_and_marks_source(tmp_path) -> None:
+def test_promote_inspiration_adds_research_idea_and_marks_source(tmp_path) -> None:
     kb_root = _build_kb(tmp_path)
 
     result = promote_inspiration(
@@ -100,11 +84,14 @@ def test_promote_inspiration_adds_dive_queue_item_and_marks_source(tmp_path) -> 
         today=date(2026, 6, 1),
     )
 
-    assert result.added_dive_queue is True
-    dive_queue = (kb_root / "_dive-queue.md").read_text(encoding="utf-8")
-    assert "- [ ] Compare field test kits against lab assays for amateur mineral identification" in dive_queue
+    assert result.added_research_idea is True
+    research_ideas = (kb_root / "topics" / "rockhounding" / "research-ideas.md").read_text(encoding="utf-8")
+    assert "## Ideas" in research_ideas
+    assert "- [ ] Compare field test kits against lab assays for amateur mineral identification" in research_ideas
+    # Prose ideas must never be written to the generated/read-only dive queue.
+    assert "Compare field test kits" not in (kb_root / "_dive-queue.md").read_text(encoding="utf-8")
     topics_inbox = (kb_root / "readinglist" / "topics.md").read_text(encoding="utf-8")
-    assert "- [x] compare field kits with lab assays — (via Telegram #inspiration-capture, 2026-05-31) — promoted to rockhounding dive queue 2026-06-01" in topics_inbox
+    assert "- [x] compare field kits with lab assays — (via Telegram #inspiration-capture, 2026-05-31) — promoted to rockhounding research ideas 2026-06-01" in topics_inbox
 
 
 def test_assign_link_missing_url_raises(tmp_path) -> None:

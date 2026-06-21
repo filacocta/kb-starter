@@ -557,7 +557,8 @@
       <div class="grid two">
         <ul class="compact-list">
           <li><strong><code>kb-prep-item.py</code></strong> - read-only pre-fetch prep: dedup, mirror rewrite, and optional media discovery.</li>
-          <li><strong><code>kb-checkoff.py</code></strong> - race-safe queue mutation under <code>.kb-write.lock</code>; updates allowed checkbox states and refreshes <code>_dive-queue.md</code>.</li>
+          <li><strong><code>kb-checkoff.py</code></strong> - race-safe in-place mark of a queue line (the "mark" verb) under <code>.kb-write.lock</code>; updates allowed checkbox states and refreshes <code>_dive-queue.md</code>.</li>
+          <li><strong><code>kb-promote.py</code></strong> - race-safe move of a queue line between canonical ladder sections (<code>--from</code>/<code>--to</code>) under <code>.kb-write.lock</code>; the "move" verb, distinct from kb-checkoff. See <code>_tools/README.md</code> for the full endpoint reference.</li>
           <li><strong><code>kb-seen.py</code></strong> - canonical URL dedup from successful source-note <code>origin:</code> and <code>mirror:</code> frontmatter; failed ingests stay retryable.</li>
           <li><strong><code>kb-derive-dive-queue.py</code></strong> - derives the read-only root research dashboard from topic <code>## Auto-approved</code> queues and <code>research-ideas.md</code>.</li>
           <li><strong><code>kb-lint.py</code></strong> - structural lint engine for frontmatter, links, reading-list shape, topic files, and media checks.</li>

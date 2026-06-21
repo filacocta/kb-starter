@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Getting Started - kb-feed / Telegram</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f4f5f2;
+    --surface: #ffffff;
+    --surface-2: #ebece8;
+    --ink: #20231f;
+    --muted: #606961;
+    --line: #cfd5cf;
+    --line-strong: #9fa9a1;
+    --top: #171b18;
+    --top-ink: #f6f7f4;
+    --top-muted: #bec7bf;
+    --accent: #1e7568;
+    --blue: #315f8c;
+    --blue-soft: #e1e9f1;
+    --warn: #986118;
+    --warn-soft: #f1e4d0;
+    --bad: #984846;
+    --bad-soft: #f0dddd;
+    --ok: #31704c;
+    --ok-soft: #dcebe2;
+    --focus: rgba(30, 117, 104, 0.34);
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #101310;
+    --surface: #191e1a;
+    --surface-2: #202620;
+    --ink: #f0f3ee;
+    --muted: #a9b2a9;
+    --line: #343d35;
+    --line-strong: #586459;
+    --top: #0c100d;
+    --top-ink: #f7faf4;
+    --top-muted: #aab5aa;
+    --accent: #68c4b5;
+    --blue: #8fb2d8;
+    --blue-soft: #1f3041;
+    --warn: #e0a958;
+    --warn-soft: #3a2a16;
+    --bad: #e18884;
+    --bad-soft: #3c2221;
+    --ok: #82c99e;
+    --ok-soft: #1d3827;
+    --focus: rgba(104, 196, 181, 0.34);
+  }
+
+  * { box-sizing: border-box; }
+  html { overflow-x: hidden; }
+  body {
+    margin: 0;
+    overflow-x: hidden;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  h1, h2, h3, p { margin: 0; }
+  h1 { max-width: 920px; font-size: clamp(26px, 4vw, 40px); line-height: 1.06; }
+  h2 { font-size: 20px; }
+  h3 { font-size: 15px; }
+  a { color: var(--accent); }
+  code {
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1px 5px;
+    background: var(--surface-2);
+    color: var(--ink);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.9em;
+    overflow-wrap: anywhere;
+  }
+  a:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+  .hero {
+    background: var(--top);
+    color: var(--top-ink);
+    border-bottom: 1px solid color-mix(in srgb, var(--accent) 76%, var(--line));
+  }
+  .hero-inner, main { width: min(1240px, 100%); margin: 0 auto; }
+  .hero-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 26px;
+    align-items: end;
+    padding: 28px 20px 22px;
+  }
+  .eyebrow { margin-bottom: 8px; color: var(--top-muted); font-size: 12px; font-weight: 780; text-transform: uppercase; }
+  .lede { max-width: 860px; margin-top: 12px; color: var(--top-muted); font-size: 16px; }
+  .start-now {
+    display: grid; gap: 8px;
+    border: 1px solid color-mix(in srgb, var(--top-muted) 42%, transparent);
+    border-radius: 4px; padding: 12px;
+    background: color-mix(in srgb, var(--top-ink) 6%, transparent);
+  }
+  .start-now strong { color: var(--top-ink); }
+  .start-now span { color: var(--top-muted); font-size: 13px; }
+
+  main { padding: 16px; }
+  .band { margin-top: 16px; border: 1px solid var(--line); background: var(--surface); }
+  .band:first-child { margin-top: 0; }
+  .section-title { border-bottom: 1px solid var(--line); padding: 14px 16px; }
+  .section-title p { max-width: 760px; color: var(--muted); margin-top: 4px; }
+  .pad { padding: 16px; }
+  .muted { color: var(--muted); }
+
+  .lane-flow {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(120px, 1fr));
+    border-top: 1px solid var(--line);
+  }
+  .lane-step {
+    display: grid; gap: 7px; align-content: start;
+    min-height: 120px;
+    border-right: 1px solid var(--line);
+    padding: 12px;
+  }
+  .lane-step:last-child { border-right: 0; }
+  .lane-step strong { font-size: 14px; }
+  .lane-step span { color: var(--muted); font-size: 13px; }
+
+  .flag {
+    display: inline-flex; width: fit-content;
+    border-radius: 4px; padding: 2px 6px;
+    background: var(--blue-soft); color: var(--blue);
+    font-size: 11px; font-weight: 780; text-transform: uppercase;
+  }
+  .flag.warn { background: var(--warn-soft); color: var(--warn); }
+  .flag.bad { background: var(--bad-soft); color: var(--bad); }
+  .flag.ok { background: var(--ok-soft); color: var(--ok); }
+
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border-bottom: 1px solid var(--line); padding: 10px 12px; text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-size: 12px; text-transform: uppercase; }
+  tbody tr:last-child td { border-bottom: 0; }
+
+  .rule-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--line); }
+  .rule { display: grid; gap: 7px; min-height: 130px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 14px; }
+  .rule:nth-child(3n) { border-right: 0; }
+  .rule p { color: var(--muted); }
+
+  ol.steps { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+  ol.steps li { padding-left: 4px; }
+
+  @media (max-width: 1060px) {
+    .hero-inner { grid-template-columns: 1fr; }
+    .lane-flow { grid-template-columns: 1fr; }
+    .lane-step, .lane-step:last-child { border-right: 0; border-bottom: 1px solid var(--line); }
+    .rule-grid { grid-template-columns: 1fr; }
+    .rule, .rule:nth-child(3n) { border-right: 0; }
+  }
+  @media (max-width: 640px) {
+    .hero-inner { padding: 22px 14px 16px; }
+    main { padding: 12px; }
+  }
+</style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <div>
+        <div class="eyebrow">kb-feed / Telegram capture</div>
+        <h1>Capture from your phone. kb-feed routes it into the KB queues.</h1>
+        <p class="lede">kb-feed is a <code>systemd --user</code> daemon that watches a private Telegram supergroup. Each message lands in a KB queue based on which topic <em>thread</em> it was posted in. It only ever writes the queue files (<code>author: kb-bot</code>), never fetches URLs, and leaves ingestion to the normal KB workflow.</p>
+      </div>
+      <aside class="start-now" aria-label="Fast start">
+        <strong>Day to day</strong>
+        <span>1. Post a URL in its topic thread → bot replies <code>Queued</code> with an Undo button.</span>
+        <span>2. Wrong thread? Tap Undo (or reply <code>/kbundo</code>) before the 2-minute flush.</span>
+        <span>3. No topic yet? Use the <code>unfiltered</code> thread. Broad idea? <code>inspiration-capture</code>.</span>
+        <span>4. Monday 10:00 the weekly digest DMs you proposals — <code>/kbreply ...</code>.</span>
+      </aside>
+    </div>
+  </header>
+
+  <main>
+    <section class="band">
+      <div class="section-title">
+        <h2>How a message becomes a queue item</h2>
+        <p>Capture is recoverable at every step: intake to SQLite, then a separate flush writes markdown under the shared write lock with an optional <code>kb-bot</code> git commit. Nothing is fetched.</p>
+      </div>
+      <div class="lane-flow">
+        <div class="lane-step"><span class="flag">1 intake</span><strong>Telegram poll</strong><span>Long-polls the bot. Filters by allowed chat + user, reads <code>message_thread_id</code>, extracts &amp; validates URLs (public http(s) only).</span></div>
+        <div class="lane-step"><span class="flag">2 queue</span><strong>SQLite outbox</strong><span>Row enqueued to <code>outbox</code> (URLs) or <code>capture_outbox</code> (text), deduped against <code>seen_urls</code>. Undo cancels pending rows.</span></div>
+        <div class="lane-step"><span class="flag">3 flush</span><strong>Writer (every 2 min)</strong><span>Claims pending rows, appends to KB markdown under <code>.kb-write.lock</code>, marks written, optionally commits as <code>kb-bot</code>.</span></div>
+        <div class="lane-step"><span class="flag ok">4 queues</span><strong>KB markdown</strong><span>Lands in the right queue file with a <code>(via Telegram #thread, date)</code> annotation.</span></div>
+        <div class="lane-step"><span class="flag warn">5 review</span><strong>You / weekly digest</strong><span>Promote, ingest, or triage through the normal KB workflow. kb-feed never ingests on its own.</span></div>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="section-title">
+        <h2>The five lanes</h2>
+        <p>The destination is decided entirely by which thread you post in (its <code>topic_map</code> slug) and whether the message carries a URL. Two slugs are reserved: <code>unfiltered</code> and <code>inspiration-capture</code>.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>You post…</th><th>in a thread mapped to…</th><th>Lands in</th></tr></thead>
+          <tbody>
+            <tr><td>A URL</td><td>a normal topic (e.g. <code>rockhounding</code>)</td><td><code>topics/&lt;slug&gt;/reading-list.md</code> under <code>## Pending</code> — or <code>## Auto-approved</code> if that lane sets <code>auto_approve = true</code>.</td></tr>
+            <tr><td>Text, no URL</td><td>a normal topic</td><td><code>topics/&lt;slug&gt;/research-ideas.md</code> — a prose rabbit hole / project seed. Not a fetched source.</td></tr>
+            <tr><td>A URL</td><td><code>unfiltered</code></td><td><code>readinglist/Links.md</code>, the global URL inbox — triage to a topic later.</td></tr>
+            <tr><td>Text</td><td><code>inspiration-capture</code></td><td><code>readinglist/topics.md</code>, the broad topic-interest inbox.</td></tr>
+            <tr><td>Anything</td><td>an <em>unmapped</em> thread</td><td>Nothing is written. The bot replies asking you to map the thread first (lossless — no silent drops).</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="section-title">
+        <h2>Telegram commands</h2>
+        <p>Sent in the supergroup (or a DM from an allowed user). Daily use is really just the first three.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Command</th><th>Does</th></tr></thead>
+          <tbody>
+            <tr><td><code>/kbdigest</code></td><td>Run the weekly queue digest now (Claude CLI, plan-mode, proposals only — no KB writes).</td></tr>
+            <tr><td><code>/kbreply &lt;decision&gt;</code></td><td>Send your free-form approve / defer / skip / rename / ingest decision back through Claude with the latest digest.</td></tr>
+            <tr><td><code>/kbremind 3h</code> · <code>/kbremind tomorrow</code></td><td>Snooze the latest digest; it re-sends when due.</td></tr>
+            <tr><td><code>/kbundo</code></td><td>Reply to your message or the bot's confirmation to cancel a still-<em>pending</em> capture (before flush).</td></tr>
+            <tr><td><code>/kbdoctor</code></td><td>Health report: thread→topic mappings, blind topics, dropped-message counters, queue backlog, unapplied proposals.</td></tr>
+            <tr><td><code>/kbnudge</code></td><td>On-demand nudge of the current capture/queue state.</td></tr>
+            <tr><td><code>/kbhelp</code></td><td>List commands.</td></tr>
+            <tr><td><code>/kbapprove</code> · <code>/kbrename</code> · <code>/kbdefer</code> · <code>/kbskip</code> · <code>/kbingest</code></td><td>Optional one-word shortcuts for common <code>/kbreply</code> intents. They don't make the bot more powerful — just less typing on mobile.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="section-title">
+        <h2>Setup essentials</h2>
+        <p>One-time per machine. Full operator guide: <code>~/Vault/projects/kb-feed/README.md</code>.</p>
+      </div>
+      <div class="pad">
+        <ol class="steps">
+          <li>Create a private supergroup, enable <strong>Topics</strong>, add the bot as admin. Token goes in <code>~/.config/kb-feed/credentials.env</code> (<code>TELEGRAM_BOT_TOKEN</code>, <code>chmod 600</code>).</li>
+          <li>Set <code>allowed_chat_id</code> and <code>allowed_users</code> in <code>~/.config/kb-feed/kb-feed.toml</code>. Capture requires both allowlists.</li>
+          <li>Map each thread to a KB topic slug: post <code>map &lt;slug&gt;</code> in the thread to learn its id, then <code>kb-feed topic-map set &lt;thread_id&gt; &lt;slug&gt;</code>. Also map one thread each to <code>unfiltered</code> and <code>inspiration-capture</code>.</li>
+          <li>Do one manual live flush and inspect the git diff before enabling timers: <code>kb-feed outbox flush --kb-root ~/Vault/knowledgebase --allow-live-kb --commit --commit-debounce-seconds 0</code>.</li>
+          <li>Enable services: <code>systemctl --user enable --now kb-feed-poll.service kb-feed-flush.timer</code>. Optional weekly review: <code>kb-feed-digest-weekly.timer</code> + <code>kb-feed-digest-reminder.timer</code>.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="section-title">
+        <h2>Boundaries &amp; safety</h2>
+        <p>These keep kb-feed from ever becoming an unsafe writer.</p>
+      </div>
+      <div class="rule-grid">
+        <article class="rule"><span class="flag bad">allowlist</span><h3>Two explicit gates</h3><p>State-changing capture needs both <code>allowed_chat_id</code> (one chat) and <code>allowed_users</code> (per-user IDs).</p></article>
+        <article class="rule"><span class="flag warn">URL safety</span><h3>Public http(s) only</h3><p>Rejects non-http(s) and DNS pointing at private, loopback, carrier-NAT, or cloud-metadata addresses.</p></article>
+        <article class="rule"><span class="flag bad">authorship</span><h3>kb-bot guard</h3><p>Appends fail if the target file lacks <code>author: kb-bot</code>. The non-negotiable backstop (Rule 1).</p></article>
+        <article class="rule"><span class="flag warn">live gate</span><h3>--allow-live-kb</h3><p>Any command that could touch <code>~/Vault/knowledgebase</code> refuses unless the live flag is explicit.</p></article>
+        <article class="rule"><span class="flag">no fetching</span><h3>Strings only</h3><p>kb-feed never fetches a URL. Capture, triage, and digest reason from URL strings and notes only.</p></article>
+        <article class="rule"><span class="flag">generated</span><h3>Dive-queue is read-only</h3><p>kb-feed writes only the queue files and regenerates <code>_dive-queue.md</code> read-only — it never appends to it (Rule 13).</p></article>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      var themeKey = "kb-dashboard-theme";
+      function applyTheme(theme) { document.documentElement.dataset.theme = theme; }
+      applyTheme(localStorage.getItem(themeKey) || (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+      window.addEventListener("storage", function (e) { if (e.key === themeKey && e.newValue) applyTheme(e.newValue); });
+      window.addEventListener("message", function (e) { if (e.data && e.data.type === "kb-theme") applyTheme(e.data.theme); });
+    })();
+  </script>
+</body>
+</html>

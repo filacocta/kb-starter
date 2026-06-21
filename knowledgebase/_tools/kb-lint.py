@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Structural lint checks for a knowledge base."""
+"""Structural lint checks for Brendan's knowledge base."""
 
 from __future__ import annotations
 

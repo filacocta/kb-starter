@@ -555,7 +555,7 @@
       <div>
         <div class="eyebrow">Workflow map</div>
         <h1>Start from the state you see, then run the smallest safe workflow.</h1>
-        <p class="lede">The dashboard is an attention console. It should tell you what needs inspection, which KB path owns it, which shared tool or skill fits, and where the result should be recorded.</p>
+        <p class="lede">The dashboard is an attention console. It tells you what needs inspection, which KB path owns it, which shared tool or skill fits, and where the result should be recorded. The two Workflow Maps — <strong>Global</strong> (one pipeline across all topics) and <strong>Hybrid</strong> (per-topic drill-down) — render the ladder live and let you promote items up it with a guarded preview → confirm → execute action.</p>
       </div>
       <aside class="start-now" aria-label="Fast start">
         <strong>Fast start</strong>
@@ -702,10 +702,22 @@
               <td>Reports frontmatter, links, queues, media, and authorship findings.</td>
             </tr>
             <tr>
-              <td>Change queue checkbox state</td>
+              <td>Change queue checkbox state (mark)</td>
               <td><code>_tools/kb-checkoff.py</code></td>
               <td>Yes</td>
-              <td>Mutates queue lines under the shared write lock and regenerates derived views.</td>
+              <td>Flips a line's checkbox in place (<code>[ ]→[x]/[!]</code>) under the shared write lock and regenerates derived views.</td>
+            </tr>
+            <tr>
+              <td>Promote an item up the ladder (move)</td>
+              <td><code>_tools/kb-promote.py</code></td>
+              <td>Yes</td>
+              <td>Moves a queue line between canonical sections (e.g. Pending → Approved → Auto-approved) under the write lock. The Workflow Maps run this live (preview → confirm → execute, audited to <code>command-log.jsonl</code>).</td>
+            </tr>
+            <tr>
+              <td>Enable/disable a kb-feed schedule</td>
+              <td>Schedules panel · <code>systemctl --user … --now &lt;timer&gt;</code></td>
+              <td>Yes</td>
+              <td>The kb-feed Schedules panel live-toggles the digest/reminder timers via a guarded, audited endpoint; the not-yet-installed nudge timer ships a copyable one-time install command.</td>
             </tr>
             <tr>
               <td>Capture a URL with provenance</td>
@@ -745,7 +757,7 @@
         <article class="rule">
           <span class="flag">queues</span>
           <h3>Use shared tools</h3>
-          <p>Queue mutation belongs in <code>_tools/kb-checkoff.py</code>, not direct dashboard edits.</p>
+          <p>Queue mutation belongs in the shared, lock-holding tools — <code>kb-checkoff.py</code> (mark) and <code>kb-promote.py</code> (move between sections) — never direct markdown edits. See <code>_tools/README.md</code>.</p>
         </article>
         <article class="rule">
           <span class="flag">generated</span>
@@ -783,15 +795,15 @@
           summary: "A URL, PDF, note, or idea enters the system, with provenance.",
           command: "readinglist/Links.md, topic reading-list.md (## Pending), kb-feed, _tools/kb-capture-url.py, clippings/",
           action: "Record the item in the right lane, tagged by source. Telegram #unfiltered and agent web-fetches land in readinglist/Links.md (a WebFetch hook auto-captures fetched URLs); a known-topic capture goes straight to that topic's ## Pending. Do not fetch yet unless the item is already promoted to an approved lane.",
-          done: ["The item has a durable path.", "Provenance (Telegram vs agent vs manual) is tagged.", "Its topic or parking-lot status is clear."]
+          done: ["The item has a durable path.", "Provenance (Telegram vs agent vs manual) is tagged — the Capture Provenance panel shows the breakdown.", "Its topic or parking-lot status is clear."]
         },
         {
           key: "triage",
           label: "Triage",
           badge: "route",
           summary: "The item is routed to a topic and promoted up the section ladder.",
-          command: "_tools/kb-checkoff.py for queue state changes; kb-feed triage for Links.md routing",
-          action: "Promote up the canonical ladder — ## Pending (unvetted) → ## Approved (vetted, interactive ingest) → ## Auto-approved (the headless-safe subset). Use topic reading lists for exact source URLs, research-ideas.md for prose-only questions, and ideas/_backlog.md for broad project inspiration.",
+          command: "_tools/kb-promote.py to move items between ladder sections; _tools/kb-checkoff.py for mark changes; kb-feed triage for Links.md routing",
+          action: "Promote up the canonical ladder — ## Pending (unvetted) → ## Approved (vetted, interactive ingest) → ## Auto-approved (the headless-safe subset). Moving an item between sections is kb-promote.py's job (kb-checkoff only flips the mark). The dashboard Workflow Maps (Global / Hybrid) run these promotions live via a guarded, audited endpoint: preview → confirm → execute. Use topic reading lists for exact source URLs, research-ideas.md for prose-only questions, and ideas/_backlog.md for broad project inspiration.",
           done: ["The source has one owner.", "It sits in the correct ladder section.", "No duplicate unchecked line remains across sections."]
         },
         {
@@ -866,6 +878,22 @@
           command: "_tools/kb-checkoff.py for state changes",
           write: "Yes, only through shared tool",
           record: "Source note or queue line should preserve the failure reason."
+        },
+        {
+          key: "promote",
+          label: "An item should move up the ladder",
+          next: "Open a Workflow Map (Global or Hybrid), open the section's drawer, and use Promote ▸. It previews the exact move, asks you to confirm, then executes under the write lock. The map refreshes its counts after.",
+          command: "_tools/kb-promote.py (run live by the Workflow Maps)",
+          write: "Yes, guarded + audited",
+          record: "command-log.jsonl logs every executed move; the dive-queue regenerates."
+        },
+        {
+          key: "schedule",
+          label: "A kb-feed schedule is off (or nudge isn't installed)",
+          next: "Open the kb-feed Schedules panel. Toggle the digest/reminder timers live; for the not-yet-installed nudge timer, copy its one-time install command and run it once.",
+          command: "Schedules panel -> /api/timer/{enable,disable}; or systemctl --user",
+          write: "Yes, guarded + audited",
+          record: "command-log.jsonl logs each toggle."
         },
         {
           key: "source-notes",

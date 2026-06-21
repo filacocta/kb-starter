@@ -210,6 +210,7 @@
     <div class="actions">
       <div class="toggle" role="tablist" aria-label="Choose write-up">
         <button id="t-guide" class="active" role="tab" aria-selected="true">Map</button>
+        <button id="t-kbfeed" role="tab" aria-selected="false">kb-feed</button>
         <button id="t-workflow" role="tab" aria-selected="false">Workflow</button>
         <button id="t-system" role="tab" aria-selected="false">System</button>
       </div>
@@ -220,6 +221,7 @@
   <div class="frames">
     <iframe id="f-workflow" title="Workflow getting-started view" src="/getting-started-claude.html"></iframe>
     <iframe id="f-system" title="System getting-started view" src="/getting-started-codex.html"></iframe>
+    <iframe id="f-kbfeed" title="kb-feed getting-started view" src="/getting-started-kbfeed.html"></iframe>
     <iframe id="f-guide" class="active" title="Operating getting-started guide" src="/getting-started-operating-guide.html"></iframe>
   </div>
 
@@ -241,6 +243,11 @@
           btn: document.getElementById("t-system"),
           frame: document.getElementById("f-system"),
           note: "System view: schema, helper scripts, rules, and layout details."
+        },
+        kbfeed: {
+          btn: document.getElementById("t-kbfeed"),
+          frame: document.getElementById("f-kbfeed"),
+          note: "kb-feed: capture from a Telegram supergroup; threads route into KB queues."
         }
       };
 
@@ -301,6 +308,7 @@
       applyTheme(preferredTheme());
       if (location.hash === "#workflow") show("workflow");
       else if (location.hash === "#system" || location.hash === "#codex") show("system");
+      else if (location.hash === "#kbfeed") show("kbfeed");
       else show("guide");
     })();
   </script>

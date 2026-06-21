@@ -12,10 +12,20 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from kb_feed.errors import KbFeedError, UrlRejected
-from kb_feed.digest import ClaudeCliDigestAgent, process_digest_reply, snooze_weekly_digest, split_telegram_message, weekly_digest
+from kb_feed.digest import (
+    default_digest_agent,
+    process_digest_reply,
+    render_digest_section,
+    snooze_weekly_digest,
+    split_telegram_message,
+    weekly_digest,
+)
+from kb_feed.doctor import build_doctor_report
 from kb_feed.locking import exclusive_kb_write_lock
+from kb_feed.nudge import build_nudge_text, count_pending_proposals
 from kb_feed.security import Resolver
 from kb_feed.state import CancelBatchResult, StateStore, validate_topic_slug
+from kb_feed.topic_init import create_topic_skeleton
 from kb_feed.urls import MessageEntityLike, extract_urls_from_entities, normalize_url
 from kb_feed.writer import write_outbox_row
 
@@ -89,17 +99,23 @@ def process_message(
         raw_urls = _extract_message_urls(message)
         if not raw_urls:
             return RuntimeResult(status="no_urls")
+        # Persist the drop so silently-lost URLs are visible to `kb-feed doctor`.
+        store.increment_meta("dropped_missing_thread_total")
         return RuntimeResult(status="missing_thread", reply_text="This message is not in a mapped topic thread.")
 
     topic_slug = store.topic_slug_for_thread(thread_id)
+    quarantine_thread: int | None = None
     if topic_slug is None:
         raw_urls = _extract_message_urls(message)
         if not raw_urls:
             return RuntimeResult(status="no_urls")
-        return RuntimeResult(
-            status="unmapped_thread",
-            reply_text=f"No KB topic mapping exists for Telegram thread {thread_id}.",
-        )
+        # Quarantine (lossless): an unmapped TOPIC thread is "a topic I made but have not
+        # mapped yet" — route its URLs to the global inbox (Links.md) instead of dropping
+        # them. General chat (thread<=0) is deliberately not handled this way.
+        store.increment_meta("quarantined_unmapped_thread_total")
+        store.increment_meta(f"quarantined_unmapped_thread:{thread_id}")
+        quarantine_thread = thread_id
+        topic_slug = "unfiltered"
 
     if _is_command_like(_message_text(message)):
         return RuntimeResult(status="command_ignored")
@@ -144,6 +160,9 @@ def process_message(
         return RuntimeResult(status="no_urls")
 
     note = _message_note(message)
+    if quarantine_thread is not None:
+        tag = f"unmapped thread {quarantine_thread}"
+        note = f"{tag} — {note}" if note else tag
     auto_approve = _should_auto_approve(
         message,
         topic_slug=topic_slug,
@@ -206,12 +225,19 @@ def process_message(
             batch_id=batch_id,
         )
     if outbox_ids:
-        target = "unfiltered review" if topic_slug == "unfiltered" else topic_slug
-        reply = f"Queued {len(outbox_ids)} URL(s) for {target}."
+        if quarantine_thread is not None:
+            reply = (
+                f"No KB topic is mapped to this thread — saved {len(outbox_ids)} URL(s) to the global "
+                f"inbox so nothing is lost. Send `map <slug>` here to route this thread's drops directly "
+                f"(it will create the topic if it doesn't exist yet)."
+            )
+        else:
+            target = "unfiltered review" if topic_slug == "unfiltered" else topic_slug
+            reply = f"Queued {len(outbox_ids)} URL(s) for {target}."
         if rejected:
             reply += f" Rejected {len(rejected)} URL(s)."
         return RuntimeResult(
-            status="queued",
+            status="quarantined" if quarantine_thread is not None else "queued",
             reply_text=reply,
             outbox_ids=tuple(outbox_ids),
             duplicate_urls=tuple(duplicates),
@@ -388,7 +414,30 @@ async def handle_undo_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def handle_start(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_message is not None:
-        await update.effective_message.reply_text("kb-feed is running.")
+        await update.effective_message.reply_text("kb-feed is running. Send /kbhelp for commands.")
+
+
+_KBHELP_TEXT = (
+    "kb-feed commands:\n"
+    "/kbhelp - this list\n"
+    "/kbdoctor - health report: thread->topic mappings, blind topics, dropped-message "
+    "counters, queue backlog, unapplied proposals\n"
+    "/kbnudge - quick count of links/notes/proposals awaiting triage (no LLM)\n"
+    "/kbdigest - build the weekly KB review digest: summary + section index (proposal-only)\n"
+    "/kbdigest <section> - fetch one section: moves | topics | priorities | deferred | replies\n"
+    "/kbreply <text> - reply to the latest digest (approve/rename/defer/skip/ingest)\n"
+    "/kbremind [later|3h|1d|tomorrow] - snooze a digest reminder\n"
+    "/kbundo - undo the most recent queued capture (reply to the bot's confirmation)\n"
+    "\nIn a topic thread: drop a URL to queue it; plain text becomes a topic idea.\n"
+    "Send `map <slug>` to map this thread to a KB topic — it CREATES the topic if it "
+    "doesn't exist yet. URLs dropped in an unmapped thread are quarantined to the global "
+    "inbox (never lost) until you map it."
+)
+
+
+async def handle_kbhelp(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_message is not None:
+        await update.effective_message.reply_text(_KBHELP_TEXT)
 
 
 async def handle_kbdigest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -403,6 +452,14 @@ async def handle_kbdigest(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         LOGGER.info("Ignoring digest command from non-configured chat %s", message.chat.id)
         return
 
+    # `/kbdigest <section>` fetches a section of the LAST digest (no LLM call); bare
+    # `/kbdigest` builds a fresh digest and replies with the summary + section index.
+    section_arg = " ".join(context.args or ()).strip()
+    if section_arg:
+        text = await asyncio.to_thread(render_digest_section, store, section_arg)
+        await _reply_long(message, text)
+        return
+
     kb_root = Path(context.application.bot_data["kb_root"])
     proposals_dir = store.path.parent / "proposals"
     await message.reply_text("Building weekly KB digest...")
@@ -411,7 +468,7 @@ async def handle_kbdigest(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             weekly_digest,
             store,
             kb_root,
-            agent=ClaudeCliDigestAgent(),
+            agent=default_digest_agent(),
             proposals_dir=proposals_dir,
         )
     except KbFeedError as exc:
@@ -419,6 +476,38 @@ async def handle_kbdigest(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await message.reply_text(f"kb-feed digest error: {exc}")
         return
     await _reply_long(message, report.telegram_text)
+
+
+async def handle_kbnudge(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    if message is None:
+        return
+    store = context.application.bot_data["state_store"]
+    if not _is_allowed_command_user(message, store):
+        await message.reply_text("This Telegram user is not allowed for kb-feed.")
+        return
+    if not _is_allowed_command_chat(message, int(context.application.bot_data["allowed_chat_id"])):
+        return
+    kb_root = Path(context.application.bot_data["kb_root"])
+    proposals = count_pending_proposals(store.path.parent / "proposals")
+    text = await asyncio.to_thread(build_nudge_text, kb_root, proposals_pending=proposals)
+    await message.reply_text(text or "KB inbox is clear — nothing awaiting triage.")
+
+
+async def handle_kbdoctor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    if message is None:
+        return
+    store = context.application.bot_data["state_store"]
+    if not _is_allowed_command_user(message, store):
+        await message.reply_text("This Telegram user is not allowed for kb-feed.")
+        return
+    if not _is_allowed_command_chat(message, int(context.application.bot_data["allowed_chat_id"])):
+        LOGGER.info("Ignoring doctor command from non-configured chat %s", message.chat.id)
+        return
+    kb_root = Path(context.application.bot_data["kb_root"])
+    report = await asyncio.to_thread(build_doctor_report, store, kb_root)
+    await _reply_long(message, report)
 
 
 async def handle_kbremind(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -457,13 +546,13 @@ async def handle_kbreply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await message.reply_text("Reply with what to approve, rename, defer, skip, or mark ingest-now.")
         return
     proposals_dir = store.path.parent / "proposals"
-    await message.reply_text("Sending your digest reply to Claude...")
+    await message.reply_text("Processing your digest reply...")
     try:
         report = await asyncio.to_thread(
             process_digest_reply,
             store,
             decision_text=decision_text,
-            agent=ClaudeCliDigestAgent(),
+            agent=default_digest_agent(),
             proposals_dir=proposals_dir,
         )
     except KbFeedError as exc:
@@ -487,6 +576,10 @@ def build_application(
     app.bot_data["kb_root"] = str(kb_root or Path("~/Vault/knowledgebase").expanduser())
     app.bot_data["auto_approve_lanes"] = tuple(auto_approve_lanes)
     app.add_handler(CommandHandler("start", handle_start))
+    app.add_handler(CommandHandler("kbhelp", handle_kbhelp))
+    app.add_handler(CommandHandler("help", handle_kbhelp))
+    app.add_handler(CommandHandler("kbdoctor", handle_kbdoctor))
+    app.add_handler(CommandHandler("kbnudge", handle_kbnudge))
     app.add_handler(CommandHandler("kbdigest", handle_kbdigest))
     app.add_handler(CommandHandler("kbremind", handle_kbremind))
     app.add_handler(CommandHandler("kbreply", handle_kbreply))
@@ -681,14 +774,15 @@ def _apply_topic_map(
             status="map_bad_slug",
             reply_text=f"'{slug}' is not a valid KB topic slug (use lowercase, hyphen-separated).",
         )
+    created = False
     if kb_root is not None and not (kb_root / "topics" / slug).exists():
-        return RuntimeResult(
-            status="map_no_topic",
-            reply_text=f"No KB topic '{slug}' exists yet. Create topics/{slug} in the KB first, then map.",
-        )
+        with exclusive_kb_write_lock(kb_root):
+            created = create_topic_skeleton(kb_root, slug)
     existing = store.topic_slug_for_thread(thread_id)
     store.set_topic_mapping(thread_id, slug)
-    if existing == slug:
+    if created:
+        reply = f"Created KB topic '{slug}' and mapped this thread to it. Links dropped here will queue under {slug}."
+    elif existing == slug:
         reply = f"This thread is already mapped to KB topic '{slug}'."
     elif existing:
         reply = f"Re-mapped this thread from '{existing}' to KB topic '{slug}'."

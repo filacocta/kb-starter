@@ -954,6 +954,23 @@ class StateStore:
                 (key, value),
             )
 
+    def increment_meta(self, key: str, amount: int = 1) -> int:
+        """Atomically increment an integer counter stored in runtime_meta; returns the new value."""
+        self._require_initialized()
+        with closing(self.connect()) as db, db:
+            db.execute(
+                """
+                INSERT INTO runtime_meta (key, value)
+                VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = CAST(CAST(runtime_meta.value AS INTEGER) + ? AS TEXT),
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (key, str(amount), amount),
+            )
+            row = db.execute("SELECT value FROM runtime_meta WHERE key = ?", (key,)).fetchone()
+        return int(row["value"]) if row else amount
+
     def _require_initialized(self) -> None:
         if self.schema_version() != SCHEMA_VERSION:
             raise KbFeedError(f"State DB is not initialized: {self.path}")

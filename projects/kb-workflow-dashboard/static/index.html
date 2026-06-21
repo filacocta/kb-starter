@@ -16,6 +16,8 @@
         <p id="subhead">Loading...</p>
       </div>
       <nav class="top-actions" aria-label="Dashboard actions">
+        <a class="top-link top-action" href="/workflow-global.html" aria-label="Open workflow map (global)">Map: Global</a>
+        <a class="top-link top-action" href="/workflow-hybrid.html" aria-label="Open workflow map (hybrid)">Map: Hybrid</a>
         <a class="top-link top-action" id="getting-started-link" href="/getting-started.html" aria-label="Open getting started guide">Guide</a>
         <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch color theme">Dark</button>
         <button class="top-action" id="refresh" type="button" title="Refresh status" aria-label="Refresh dashboard status">Refresh</button>
@@ -49,6 +51,24 @@
           <h2>kb-feed</h2>
           <div class="content muted">Loading...</div>
         </article>
+      </section>
+
+      <section class="band">
+        <div class="section-title">
+          <h2>Capture Provenance</h2>
+          <span class="hint" id="provenance-summary">Loading...</span>
+        </div>
+        <div class="panel" id="provenance-panel">
+          <div class="content muted">Loading...</div>
+        </div>
+      </section>
+
+      <section class="band">
+        <div class="section-title">
+          <h2>kb-feed Schedules</h2>
+          <span class="hint">Toggle the digest / nudge timers — live <code>systemctl --user</code>, confirmed and audited.</span>
+        </div>
+        <div class="grid queue-grid" id="timers"></div>
       </section>
 
       <section class="band">

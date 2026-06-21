@@ -8,6 +8,8 @@ import ipaddress
 import json
 import re
 import sqlite3
+import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -38,6 +40,12 @@ CHECKBOX_STATUS = {
     "~": "active",
     "?": "review",
 }
+# Canonical reading-list section ladder (see _schema.md / _rules.md). A queue's
+# `## <name>` headings are matched against this list; any `### sub-group` rolls
+# up into the canonical `##` parent it sits under so ladder counts stay accurate
+# even when items are filed under dated sub-headings (e.g. field-sensing).
+CANONICAL_LADDER = ["Pending", "Approved", "Auto-approved", "Processed", "Failed — Retry"]
+LADDER_OTHER = "Other"
 
 
 @dataclass
@@ -52,6 +60,7 @@ class QueueFile:
     kind: str
     sections: list[dict[str, object]]
     items: list[dict[str, object]]
+    ladder: dict[str, dict[str, int]]
 
 
 def read_text(path: Path) -> str:
@@ -148,15 +157,22 @@ def parse_queue_file(path: Path, kb_root: Path, label: str | None = None, kind: 
     visible_lines = iter_visible_lines(read_text(path))
     sections: list[dict[str, object]] = []
     items: list[dict[str, object]] = []
+    ladder: dict[str, dict[str, int]] = {name: empty_counts() for name in CANONICAL_LADDER}
+    ladder[LADDER_OTHER] = empty_counts()
     current = {"heading": "Top", "unchecked": 0, "checked": 0, "failed": 0, "active": 0, "review": 0}
     current_heading = "Top"
+    current_ladder = LADDER_OTHER  # canonical bucket the current line rolls up into
     has_seen_content = False
     for line_number, line in visible_lines:
         heading = re.match(r"^(#{2,3})\s+(.+?)\s*$", line)
         if heading:
             if has_seen_content or any(current[k] for k in ("unchecked", "checked", "failed", "active", "review")):
                 sections.append(current)
+            level = len(heading.group(1))
             current_heading = heading.group(2)
+            # `##` sets the canonical bucket; `###` keeps the parent `##` bucket.
+            if level == 2:
+                current_ladder = current_heading if current_heading in ladder else LADDER_OTHER
             current = {"heading": current_heading, "unchecked": 0, "checked": 0, "failed": 0, "active": 0, "review": 0}
             has_seen_content = True
             continue
@@ -167,12 +183,14 @@ def parse_queue_file(path: Path, kb_root: Path, label: str | None = None, kind: 
         if item_match:
             status = CHECKBOX_STATUS[item_match.group(1).lower()]
             current[status] += 1
+            ladder[current_ladder][status] += 1
 
         if status:
             items.append(
                 {
                     "status": status,
                     "section": current_heading,
+                    "ladder": current_ladder,
                     "line": line_number,
                     "text": CHECKBOX_RE.sub("", stripped, count=1).strip(),
                 }
@@ -192,6 +210,7 @@ def parse_queue_file(path: Path, kb_root: Path, label: str | None = None, kind: 
         kind=kind,
         sections=sections,
         items=items,
+        ladder=ladder,
     )
 
 
@@ -210,6 +229,7 @@ def queue_payload(queue: QueueFile, include_items: bool = False, preview_limit: 
         "review": queue.review,
         "kind": queue.kind,
         "sections": queue.sections,
+        "ladder": queue.ladder,
         "item_count": len(queue.items),
     }
     if include_items:
@@ -336,6 +356,72 @@ def parse_recent_log(kb_root: Path, limit: int = 5) -> list[dict[str, str]]:
     return [{"title": str(item["title"]), "summary": str(item["summary"])} for item in out[:limit]]
 
 
+TELEGRAM_PROV_RE = re.compile(r"\(via Telegram #?([\w./-]+)", re.IGNORECASE)
+AGENT_PROV_RE = re.compile(r"\(via agent ([\w.-]+)", re.IGNORECASE)
+
+
+def classify_provenance(text: str) -> tuple[str, str | None]:
+    """Classify a queue item's capture source from its provenance tag."""
+    m = TELEGRAM_PROV_RE.search(text)
+    if m:
+        return "telegram", m.group(1).rstrip(",.").lower()
+    m = AGENT_PROV_RE.search(text)
+    if m:
+        return "agent", m.group(1).rstrip(",.").lower()
+    return "manual", None
+
+
+def parse_provenance(kb_root: Path) -> dict[str, object]:
+    """Aggregate captured items by source (Telegram vs agent vs manual) across
+    the global inbox and every topic reading-list. Tags are written at capture
+    time (Rule 31 / kb-capture-url provenance)."""
+    paths = [kb_root / "readinglist" / "Links.md"]
+    topics_dir = kb_root / "topics"
+    if topics_dir.exists():
+        for d in sorted(p for p in topics_dir.iterdir() if p.is_dir()):
+            rl = d / "reading-list.md"
+            if rl.exists():
+                paths.append(rl)
+
+    def bucket() -> dict[str, int]:
+        return {"total": 0, "open": 0}
+
+    by_source = {"telegram": bucket(), "agent": bucket(), "manual": bucket()}
+    threads: dict[str, dict[str, int]] = {}
+    agents: dict[str, dict[str, int]] = {}
+    total = 0
+    open_total = 0
+    for path in paths:
+        for item in parse_queue_file(path, kb_root).items:
+            src, detail = classify_provenance(str(item["text"]))
+            is_open = item["status"] == "unchecked"
+            total += 1
+            open_total += 1 if is_open else 0
+            by_source[src]["total"] += 1
+            by_source[src]["open"] += 1 if is_open else 0
+            sub = threads if src == "telegram" else agents if src == "agent" else None
+            if sub is not None and detail:
+                row = sub.setdefault(detail, bucket())
+                row["total"] += 1
+                row["open"] += 1 if is_open else 0
+    rank = lambda d: dict(sorted(d.items(), key=lambda kv: (-kv[1]["total"], kv[0])))
+    # The capture-topic marker decides where the WebFetch capture hook routes
+    # agent web-fetches: a topic's ## Pending when set, else the global inbox.
+    marker = Path.home() / ".local" / "state" / "kb-feed" / "capture-topic"
+    try:
+        capture_topic = marker.read_text(encoding="utf-8").strip() or None
+    except OSError:
+        capture_topic = None
+    return {
+        "total": total,
+        "open": open_total,
+        "by_source": by_source,
+        "telegram_threads": rank(threads),
+        "agents": rank(agents),
+        "capture_topic": capture_topic,
+    }
+
+
 def parse_kb_feed_state(db_path: Path) -> dict[str, object]:
     if not db_path.exists():
         return {"available": False, "path": str(db_path), "error": "state DB not found"}
@@ -405,8 +491,149 @@ def build_status(kb_root: Path, state_db: Path) -> dict[str, object]:
         "topics": topics,
         "projects": projects,
         "kb_feed": parse_kb_feed_state(state_db),
+        "kb_feed_timers": parse_kb_feed_timers(),
+        "provenance": parse_provenance(kb_root),
         "recent_log": parse_recent_log(kb_root),
     }
+
+
+def append_audit(app_dir: Path, op: str, entry: dict) -> None:
+    """Append one JSON line to the dashboard-local execution log. Best-effort."""
+    rec = {"ts": datetime.now(timezone.utc).isoformat(), "op": op, **entry}
+    try:
+        with open(app_dir / "command-log.jsonl", "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec) + "\n")
+    except Exception:  # pragma: no cover - logging must never break the request
+        pass
+
+
+# kb-feed scheduled timers the dashboard can read and (for installed ones) toggle.
+KB_FEED_TIMERS = [
+    ("kb-feed-digest-weekly.timer", "Weekly digest", "Mon 10:00 — Claude reviews the queues and DMs proposals."),
+    ("kb-feed-digest-reminder.timer", "Digest reminder", "Every 15 min — resends a snoozed digest when due."),
+    ("kb-feed-nudge.timer", "Triage nudge", "Wed & Sat 09:00 — DMs a count of links/notes/proposals awaiting triage."),
+]
+TIMER_TOGGLE_ALLOW = {unit for unit, _, _ in KB_FEED_TIMERS}
+# One-time install for the nudge units (templates ship in the kb-feed repo but
+# were never copied into ~/.config/systemd/user/). Surfaced as a copyable
+# handoff in the UI — the dashboard does not copy unit files itself.
+NUDGE_INSTALL_CMD = (
+    "cp ~/Vault/projects/kb-feed/deploy/systemd/kb-feed-nudge.{service,timer} ~/.config/systemd/user/\n"
+    "systemctl --user daemon-reload\n"
+    "systemctl --user enable --now kb-feed-nudge.timer"
+)
+
+
+def parse_kb_feed_timers() -> list[dict[str, object]]:
+    """Read state of the kb-feed schedules via `systemctl --user show` (read-only).
+    systemctl renders the *USec properties as human-readable strings; use them
+    as-is (realtime for OnCalendar timers, monotonic 'relative' for OnUnitActive)."""
+    props_names = ["ActiveState", "UnitFileState", "LoadState",
+                   "NextElapseUSecRealtime", "NextElapseUSecMonotonic", "LastTriggerUSec"]
+    out: list[dict[str, object]] = []
+    for unit, label, desc in KB_FEED_TIMERS:
+        entry: dict[str, object] = {"unit": unit, "label": label, "desc": desc}
+        try:
+            proc = subprocess.run(
+                ["systemctl", "--user", "show", unit, "--no-pager",
+                 *[f"--property={p}" for p in props_names]],
+                capture_output=True, text=True, timeout=5,
+            )
+            props = dict(
+                line.split("=", 1) for line in proc.stdout.splitlines() if "=" in line
+            )
+        except Exception:
+            out.append({**entry, "available": False})
+            continue
+        installed = props.get("LoadState", "") not in ("not-found", "")
+        next_rt = props.get("NextElapseUSecRealtime", "").strip()
+        next_mono = props.get("NextElapseUSecMonotonic", "").strip()
+        next_val = next_rt or (next_mono if next_mono and next_mono != "0" else "")
+        if next_val in ("infinity", "0"):
+            next_val = ""
+        last = props.get("LastTriggerUSec", "").strip()
+        if not installed:
+            next_val = last = ""
+        entry.update({
+            "available": True,
+            "installed": installed,
+            "active": props.get("ActiveState") == "active",
+            "enabled": props.get("UnitFileState", ""),
+            "next": next_val or None,
+            "last": last or None,
+            "install_cmd": NUDGE_INSTALL_CMD if (not installed and "nudge" in unit) else None,
+        })
+        out.append(entry)
+    return out
+
+
+def run_timer_toggle(app_dir: Path, payload: dict, action: str) -> tuple[int, dict]:
+    """Enable/disable a kb-feed timer via `systemctl --user` (allowlisted, no shell, audited)."""
+    unit = payload.get("unit", "")
+    if action not in ("enable", "disable"):
+        return 400, {"ok": False, "error": "bad_action", "message": action}
+    if unit not in TIMER_TOGGLE_ALLOW:
+        return 400, {"ok": False, "error": "unit_not_allowed", "message": str(unit)}
+    try:
+        proc = subprocess.run(
+            ["systemctl", "--user", action, "--now", unit],
+            capture_output=True, text=True, timeout=20,
+        )
+    except Exception as exc:
+        return 500, {"ok": False, "error": "exec_failed", "message": str(exc)}
+    ok = proc.returncode == 0
+    msg = (proc.stderr or proc.stdout or ("done" if ok else "failed")).strip()
+    result = {"ok": ok, "action": action, "unit": unit, "message": msg}
+    if ok:
+        append_audit(app_dir, "timer", {"unit": unit, "action": action, "message": msg})
+    return (200 if ok else 422), result
+
+
+def run_promote(kb_root: Path, app_dir: Path, payload: dict, execute: bool) -> tuple[int, dict]:
+    """Validate a promote request and shell out to `_tools/kb-promote.py` with a
+    fixed arg list (never a shell). This is a *promote* endpoint, not a generic
+    runner: `file` must be an allowlisted topic reading-list, and `from`/`to`
+    must be canonical ladder sections."""
+    file = payload.get("file", "")
+    url = payload.get("url", "")
+    frm = payload.get("from", "")
+    to = payload.get("to", "")
+
+    if not isinstance(file, str) or ".." in Path(file).parts or not (
+        file.startswith("topics/") and file.endswith("reading-list.md")
+    ):
+        return 400, {"ok": False, "error": "invalid_file", "message": "file must be a topic reading-list path"}
+    if file not in queue_specs(kb_root):
+        return 404, {"ok": False, "error": "unknown_queue", "message": file}
+    if frm not in CANONICAL_LADDER or to not in CANONICAL_LADDER:
+        return 400, {"ok": False, "error": "invalid_section", "message": "from/to must be canonical ladder sections"}
+    if frm == to:
+        return 400, {"ok": False, "error": "same_section", "message": "from and to are identical"}
+    if not isinstance(url, str) or not url.strip():
+        return 400, {"ok": False, "error": "missing_url", "message": "url required"}
+
+    script = kb_root / "_tools" / "kb-promote.py"
+    if not script.exists():
+        return 500, {"ok": False, "error": "missing_tool", "message": "kb-promote.py not found"}
+
+    args = [sys.executable, str(script), "--kb-root", str(kb_root),
+            "--file", file, "--url", url, "--from", frm, "--to", to, "--json"]
+    if not execute:
+        args.append("--dry-run")
+    try:
+        proc = subprocess.run(args, capture_output=True, text=True, timeout=30)
+    except Exception as exc:
+        return 500, {"ok": False, "error": "exec_failed", "message": str(exc)}
+
+    try:
+        result = json.loads(proc.stdout.strip() or "{}")
+    except json.JSONDecodeError:
+        result = {"ok": False, "message": (proc.stderr or proc.stdout or "no output").strip()}
+    result["executed"] = bool(execute and result.get("ok"))
+    if execute and result.get("ok"):
+        append_audit(app_dir, "promote", {"file": file, "url": url, "from": frm, "to": to,
+                                          "line": result.get("line"), "message": result.get("message")})
+    return (200 if result.get("ok") else 422), result
 
 
 class DashboardHandler(SimpleHTTPRequestHandler):
@@ -449,6 +676,59 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/":
             self.path = "/index.html"
         return super().do_GET()
+
+    def do_POST(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path in ("/api/promote/preview", "/api/promote/execute"):
+            if not self._origin_is_local():
+                self.send_json({"ok": False, "error": "forbidden", "message": "non-local origin"}, status=403)
+                return
+            payload = self._read_json_body()
+            if payload is None:
+                self.send_json({"ok": False, "error": "bad_request", "message": "invalid JSON body"}, status=400)
+                return
+            execute = parsed.path.endswith("execute")
+            app_dir = self.static_dir.parent
+            status, result = run_promote(self.kb_root, app_dir, payload, execute)
+            self.send_json(result, status=status)
+            return
+        if parsed.path in ("/api/timer/enable", "/api/timer/disable"):
+            if not self._origin_is_local():
+                self.send_json({"ok": False, "error": "forbidden", "message": "non-local origin"}, status=403)
+                return
+            payload = self._read_json_body()
+            if payload is None:
+                self.send_json({"ok": False, "error": "bad_request", "message": "invalid JSON body"}, status=400)
+                return
+            action = "enable" if parsed.path.endswith("enable") else "disable"
+            status, result = run_timer_toggle(self.static_dir.parent, payload, action)
+            self.send_json(result, status=status)
+            return
+        self.send_json({"error": "not_found"}, status=404)
+
+    def _origin_is_local(self) -> bool:
+        """Reject writes driven from a non-loopback page (CSRF guard for the
+        local tool). The server already binds loopback; this also checks Origin
+        and Host so a random local web page cannot POST to us."""
+        origin = self.headers.get("Origin")
+        if origin:
+            host = urlparse(origin).hostname or ""
+            if not host_is_loopback(host):
+                return False
+        host_hdr = (self.headers.get("Host") or "").rsplit(":", 1)[0]
+        return host_is_loopback(host_hdr) if host_hdr else True
+
+    def _read_json_body(self) -> dict | None:
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            return None
+        if length <= 0 or length > 64 * 1024:
+            return None
+        try:
+            return json.loads(self.rfile.read(length).decode("utf-8"))
+        except Exception:
+            return None
 
     def send_json(self, data: object, status: int = 200) -> None:
         encoded = json.dumps(data, indent=2).encode("utf-8")
@@ -503,7 +783,8 @@ def main() -> int:
     server = ThreadingHTTPServer((args.host, args.port), handler)
     print(f"KB Workflow Dashboard: http://{args.host}:{args.port}")
     print(f"KB root: {handler.kb_root}")
-    print("Read-only MVP: no KB writes or command execution.")
+    print("Read-only except the guarded /api/promote/{preview,execute} endpoints")
+    print("(loopback-only, allowlisted topic reading-lists, kb-promote.py under the write lock, audited to command-log.jsonl).")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

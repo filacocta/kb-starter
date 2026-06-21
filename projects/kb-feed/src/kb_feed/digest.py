@@ -21,6 +21,21 @@ from kb_feed.triage import InspirationItem, LinkItem, discover_topics, parse_unc
 LAST_WEEKLY_DIGEST_META_KEY = "last_weekly_digest_at"
 LAST_WEEKLY_DIGEST_FILE_META_KEY = "last_weekly_digest_file"
 LAST_WEEKLY_DIGEST_TEXT_META_KEY = "last_weekly_digest_text"
+LAST_WEEKLY_DIGEST_BODY_META_KEY = "last_weekly_digest_body"  # full Markdown, for /kbdigest <section>
+
+# Canonical digest sections (the prompt must emit these exact `## ` headings, in order).
+DIGEST_SECTIONS = ("Summary", "Proposed moves", "Possible new topics", "Ingest priorities", "Deferred", "Suggested replies")
+# Friendly /kbdigest <arg> -> section name.
+DIGEST_SECTION_ALIASES = {
+    "summary": "Summary",
+    "moves": "Proposed moves",
+    "topics": "Possible new topics",
+    "new-topics": "Possible new topics",
+    "priorities": "Ingest priorities",
+    "ingest": "Ingest priorities",
+    "deferred": "Deferred",
+    "replies": "Suggested replies",
+}
 LAST_WEEKLY_DIGEST_REPLY_FILE_META_KEY = "last_weekly_digest_reply_file"
 LAST_WEEKLY_DIGEST_REPLY_TEXT_META_KEY = "last_weekly_digest_reply_text"
 WEEKLY_DIGEST_SNOOZED_UNTIL_META_KEY = "weekly_digest_snoozed_until"
@@ -93,16 +108,46 @@ class ClaudeCliDigestAgent:
                     env=_claude_subprocess_env(),
                 )
         except FileNotFoundError as exc:
-            raise KbFeedError(f"agent CLI not found: {self._command[0]}") from exc
+            raise KbFeedError(f"Claude CLI not found: {self._command[0]}") from exc
         except subprocess.TimeoutExpired as exc:
-            raise KbFeedError(f"agent CLI digest timed out after {self._timeout_seconds}s.") from exc
+            raise KbFeedError(f"Claude CLI digest timed out after {self._timeout_seconds}s.") from exc
         if completed.returncode != 0:
             detail = (completed.stderr or completed.stdout or "").strip()
-            raise KbFeedError(f"agent CLI digest failed with exit {completed.returncode}: {detail[:500]}")
+            raise KbFeedError(f"Claude CLI digest failed with exit {completed.returncode}: {detail[:500]}")
         text = completed.stdout.strip()
         if not text:
-            raise KbFeedError("agent CLI digest returned empty output.")
+            raise KbFeedError("Claude CLI digest returned empty output.")
         return text
+
+
+_DIGEST_SYSTEM_PROMPT = (
+    "You are a read-only knowledge-base review assistant. You never fetch URLs, write to the KB, "
+    "or create topics. You return only a concise Markdown proposal digest as instructed."
+)
+
+
+class LlmDigestAgent:
+    """DigestAgent backed by the DeepSeek (OpenAI-compatible) LLM client."""
+
+    def __init__(self, client: "object | None" = None) -> None:
+        self._client = client
+
+    def complete(self, prompt: str) -> str:
+        from kb_feed.llm import LlmClient, load_llm_config_from_env
+
+        client = self._client or LlmClient(load_llm_config_from_env())
+        return client.complete_text(system_prompt=_DIGEST_SYSTEM_PROMPT, user_prompt=prompt)
+
+
+def default_digest_agent() -> DigestAgent:
+    """DeepSeek by default; fall back to the Claude CLI when DeepSeek creds are absent."""
+    from kb_feed.llm import LlmUnavailable, load_llm_config_from_env
+
+    try:
+        load_llm_config_from_env()
+    except LlmUnavailable:
+        return ClaudeCliDigestAgent()
+    return LlmDigestAgent()
 
 
 def weekly_digest(
@@ -135,7 +180,71 @@ def weekly_digest(
     store.set_meta(LAST_WEEKLY_DIGEST_META_KEY, timestamp.isoformat())
     store.set_meta(LAST_WEEKLY_DIGEST_FILE_META_KEY, str(proposals_path))
     store.set_meta(LAST_WEEKLY_DIGEST_TEXT_META_KEY, telegram_text)
+    store.set_meta(LAST_WEEKLY_DIGEST_BODY_META_KEY, agent_text)
     return DigestReport(ran=True, proposals_path=proposals_path, item_count=item_count, telegram_text=telegram_text)
+
+
+def render_digest_section(store: StateStore, arg: str) -> str:
+    """Return one section of the stored digest for the /kbdigest <section> command."""
+    body = store.get_meta(LAST_WEEKLY_DIGEST_BODY_META_KEY)
+    if not body:
+        return "No weekly digest is available yet. Run /kbdigest first."
+    key = " ".join(arg.split()).lower().strip()
+    if not key or key in {"index", "sections"}:
+        return _digest_summary_and_index(body)
+    section_name = DIGEST_SECTION_ALIASES.get(key)
+    if section_name is None:
+        valid = ", ".join(sorted(DIGEST_SECTION_ALIASES))
+        return f"Unknown digest section '{arg}'. Try one of: {valid}."
+    sections = _parse_digest_sections(body)
+    content = sections.get(section_name)
+    if not content:
+        return f"## {section_name}\n(no items)"
+    return f"## {section_name}\n{content}".strip()
+
+
+def _parse_digest_sections(body: str) -> dict[str, str]:
+    """Split digest Markdown into {section-name: body-text} by level-2 headings."""
+    sections: dict[str, str] = {}
+    current: str | None = None
+    buf: list[str] = []
+    for line in body.splitlines():
+        m = re.match(r"^##\s+(.+?)\s*$", line)
+        if m:
+            if current is not None:
+                sections[current] = "\n".join(buf).strip()
+            current = m.group(1).strip()
+            buf = []
+        elif current is not None:
+            buf.append(line)
+    if current is not None:
+        sections[current] = "\n".join(buf).strip()
+    return sections
+
+
+def _section_item_count(content: str) -> int:
+    return sum(1 for ln in content.splitlines() if ln.lstrip().startswith("- "))
+
+
+def _digest_summary_and_index(body: str) -> str:
+    sections = _parse_digest_sections(body)
+    summary = sections.get("Summary", "").strip()
+    lines = ["Weekly KB digest"]
+    if summary:
+        lines.append("")
+        lines.append(summary)
+    index_bits = []
+    for name in DIGEST_SECTIONS:
+        if name == "Summary":
+            continue
+        count = _section_item_count(sections.get(name, ""))
+        alias = next((a for a, n in DIGEST_SECTION_ALIASES.items() if n == name and "-" not in a), name.lower())
+        index_bits.append(f"{name}: {count}  ->  /kbdigest {alias}")
+    if index_bits:
+        lines.append("")
+        lines.append("Sections (fetch each with the command shown):")
+        lines.extend(f"- {bit}" for bit in index_bits)
+    return "\n".join(lines).strip()
 
 
 def snooze_weekly_digest(store: StateStore, value: str, *, now: datetime | None = None) -> datetime:
@@ -355,11 +464,14 @@ def _render_weekly_digest_prompt(items: dict[str, Any], topics: tuple[str, ...],
     payload = {
         "allowed_existing_topics": list(topics),
         "instructions": (
-            "You are agent CLI helping review a KB queue packet. This is a proposal-only Telegram digest. "
+            "You are reviewing a KB queue packet. This is a proposal-only digest. "
             "Do not fetch URLs. Do not write to the KB. Do not create topics. Reason only from the queue packet below, "
-            "the existing topic slugs, and KB architecture knowledge. Return concise Markdown suitable for a Telegram DM. "
-            "Include sections: Summary, Proposed existing-topic moves, Possible new topics, Ingest priorities, Deferred, "
-            "and Suggested replies. Suggested replies should include approve/rename/defer/skip language the user can send later."
+            "the existing topic slugs, and KB architecture knowledge. "
+            "Return concise Markdown using EXACTLY these level-2 headings, in this order and spelled exactly: "
+            "'## Summary', '## Proposed moves', '## Possible new topics', '## Ingest priorities', '## Deferred', "
+            "'## Suggested replies'. Under Summary write 1-3 sentences. Under every other heading put one '- ' bullet "
+            "per item (or a single '- (none)' line if empty). Suggested replies should give approve/rename/defer/skip "
+            "language the user can send later."
         ),
         "kb_root": str(kb_root),
         "unfiltered_links": [_clip_text(item.display, MAX_DIGEST_ITEM_CHARS) for item in items["unfiltered_links"]],
@@ -375,7 +487,7 @@ def _render_weekly_digest_prompt(items: dict[str, Any], topics: tuple[str, ...],
 def _render_digest_reply_prompt(*, full_digest: str, decision_text: str) -> str:
     payload = {
         "instructions": (
-            "You are agent CLI helping the user review a kb-feed weekly digest. "
+            "You are Claude Code helping the user review a kb-feed weekly digest. "
             "The user has responded with an approval/modification/defer instruction. "
             "Do not fetch URLs. Do not write to the KB. Do not create topics. "
             "Interpret the user's decision against the digest and return concise Markdown suitable for Telegram. "
@@ -407,7 +519,7 @@ def _write_weekly_digest(
     lines = [
         f"# kb-feed weekly digest — {now.isoformat()}",
         "",
-        "Generated by agent CLI from a kb-feed queue packet.",
+        "Generated by Claude CLI from a kb-feed queue packet.",
         "These are proposals only. kb-feed has not modified the KB, created topics, ingested sources, or fetched URLs.",
         "",
         "## Input Counts",
@@ -438,7 +550,7 @@ def _write_digest_reply(
     lines = [
         f"# kb-feed weekly digest reply — {now.isoformat()}",
         "",
-        "Generated by agent CLI from the latest digest and the user's Telegram reply.",
+        "Generated by Claude CLI from the latest digest and the user's Telegram reply.",
         "These are proposals only. kb-feed has not modified the KB, created topics, ingested sources, or fetched URLs.",
         "",
         f"Source digest: {source_digest_file or '(stored Telegram summary only)'}",
@@ -457,10 +569,12 @@ def _write_digest_reply(
 
 
 def _render_telegram_digest(agent_text: str, *, item_count: int, proposals_path: Path) -> str:
-    header = f"Weekly KB digest\n{item_count} unchecked item(s) reviewed by Claude.\n\n"
-    footer = f"\n\nFull proposal: {proposals_path}\nCommands: /kbremind 3h, /kbremind tomorrow, /kbdigest"
-    body = agent_text.strip()
-    return f"{header}{body}{footer}".strip()
+    index = _digest_summary_and_index(agent_text)
+    footer = (
+        f"\n\n{item_count} unchecked item(s) reviewed. Full proposal: {proposals_path}"
+        f"\nCommands: /kbdigest <section>, /kbreply <decision>, /kbremind 3h"
+    )
+    return f"{index}{footer}".strip()
 
 
 def _render_digest_reply_telegram(agent_text: str, *, proposals_path: Path) -> str:
@@ -468,143 +582,6 @@ def _render_digest_reply_telegram(agent_text: str, *, proposals_path: Path) -> s
     footer = f"\n\nFull reply: {proposals_path}\nCommands: /kbreply <decision>, /kbremind 3h, /kbdigest"
     body = agent_text.strip()
     return f"{header}{body}{footer}".strip()
-
-
-def _extend_list_section(lines: list[str], title: str, values: list[str]) -> None:
-    lines.extend([f"## {title}", ""])
-    if not values:
-        lines.extend(["- (none)", ""])
-        return
-    lines.extend(f"- {value}" for value in values)
-    lines.append("")
-
-
-def _extend_assignment_section(lines: list[str], assignments: list[dict[str, str]]) -> None:
-    lines.extend(["## Existing Topic Assignments", ""])
-    if not assignments:
-        lines.extend(["- (none)", ""])
-        return
-    for item in assignments:
-        lines.append(f"- url: {item['url']}")
-        lines.append(f"  topic: {item['topic']}")
-        if item["rationale"]:
-            lines.append(f"  rationale: {item['rationale']}")
-    lines.append("")
-
-
-def _extend_new_topic_section(lines: list[str], topics: list[dict[str, Any]]) -> None:
-    lines.extend(["## Proposed New Topics", ""])
-    if not topics:
-        lines.extend(["- (none)", ""])
-        return
-    for item in topics:
-        lines.append(f"- slug: {item['slug']}")
-        if item["title"]:
-            lines.append(f"  title: {item['title']}")
-        if item["rationale"]:
-            lines.append(f"  rationale: {item['rationale']}")
-        for url in item["urls"]:
-            lines.append(f"  url: {url}")
-    lines.append("")
-
-
-def _extend_priority_section(lines: list[str], priorities: list[dict[str, str]]) -> None:
-    lines.extend(["## Ingest Priorities", ""])
-    if not priorities:
-        lines.extend(["- (none)", ""])
-        return
-    for item in priorities:
-        lines.append(f"- url: {item['url']}")
-        lines.append(f"  topic: {item['topic']}")
-        if item["reason"]:
-            lines.append(f"  reason: {item['reason']}")
-    lines.append("")
-
-
-def _extend_deferred_section(lines: list[str], deferred: list[dict[str, str]]) -> None:
-    lines.extend(["## Deferred", ""])
-    if not deferred:
-        lines.extend(["- (none)", ""])
-        return
-    for item in deferred:
-        lines.append(f"- item: {item['item']}")
-        if item["reason"]:
-            lines.append(f"  reason: {item['reason']}")
-    lines.append("")
-
-
-def _string_list(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [_single_line(item) for item in value if _single_line(item)]
-
-
-def _assignments(value: Any, allowed: set[str]) -> list[dict[str, str]]:
-    if not isinstance(value, list):
-        return []
-    cleaned = []
-    for entry in value:
-        if not isinstance(entry, dict):
-            continue
-        url = _single_line(entry.get("url"))
-        topic = _single_line(entry.get("topic")).lower()
-        if not url or topic not in allowed:
-            continue
-        cleaned.append({"url": url, "topic": topic, "rationale": _single_line(entry.get("rationale"))})
-    return cleaned
-
-
-def _new_topics(value: Any) -> list[dict[str, Any]]:
-    if not isinstance(value, list):
-        return []
-    cleaned = []
-    for entry in value:
-        if not isinstance(entry, dict):
-            continue
-        slug = _single_line(entry.get("slug")).lower()
-        if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", slug):
-            continue
-        urls = _string_list(entry.get("urls"))
-        cleaned.append(
-            {
-                "slug": slug,
-                "title": _single_line(entry.get("title")),
-                "rationale": _single_line(entry.get("rationale")),
-                "urls": urls,
-            }
-        )
-    return cleaned
-
-
-def _priorities(value: Any, allowed: set[str]) -> list[dict[str, str]]:
-    if not isinstance(value, list):
-        return []
-    cleaned = []
-    for entry in value:
-        if not isinstance(entry, dict):
-            continue
-        url = _single_line(entry.get("url"))
-        topic = _single_line(entry.get("topic")).lower()
-        if not url or topic not in allowed:
-            continue
-        cleaned.append({"url": url, "topic": topic, "reason": _single_line(entry.get("reason"))})
-    return cleaned
-
-
-def _deferred(value: Any) -> list[dict[str, str]]:
-    if not isinstance(value, list):
-        return []
-    cleaned = []
-    for entry in value:
-        if isinstance(entry, dict):
-            item = _single_line(entry.get("item") or entry.get("url") or entry.get("note"))
-            reason = _single_line(entry.get("reason"))
-        else:
-            item = _single_line(entry)
-            reason = ""
-        if item:
-            cleaned.append({"item": item, "reason": reason})
-    return cleaned
 
 
 def _single_line(value: Any) -> str:

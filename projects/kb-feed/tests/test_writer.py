@@ -172,7 +172,7 @@ def test_flush_outbox_creates_missing_topic_queue(tmp_path) -> None:
     assert result.written == (1,)
     assert result.failed == ()
     assert row.status == "written"
-    assert text.index("## Queue") < text.index(line)
+    assert text.index("## Pending") < text.index(line)
 
 
 def test_flush_outbox_skips_canceled_rows(tmp_path) -> None:
@@ -284,7 +284,7 @@ def test_flush_outbox_writes_inspiration_capture_to_topics_review_queue(tmp_path
     assert store.list_capture_outbox()[0].status == "written"
 
 
-def test_flush_outbox_writes_topic_idea_to_dive_queue(tmp_path) -> None:
+def test_flush_outbox_writes_topic_idea_to_research_ideas(tmp_path) -> None:
     kb_root = _kb_fixture(tmp_path)
     store = StateStore(tmp_path / "state.sqlite")
     store.initialize()
@@ -302,7 +302,12 @@ def test_flush_outbox_writes_topic_idea_to_dive_queue(tmp_path) -> None:
         "— (via Telegram #obsidian, 2026-05-31)"
     )
     assert result.capture_written == (1,)
-    assert line in (kb_root / "_dive-queue.md").read_text(encoding="utf-8")
+    # Prose topic-ideas land in the topic's research-ideas.md (## Ideas), NOT the
+    # generated/read-only _dive-queue.md (which the post-flush regeneration would clobber).
+    research_ideas = (kb_root / "topics" / "obsidian" / "research-ideas.md").read_text(encoding="utf-8")
+    assert "## Ideas" in research_ideas
+    assert line in research_ideas
+    assert line not in (kb_root / "_dive-queue.md").read_text(encoding="utf-8")
     assert line not in (kb_root / "readinglist" / "topics.md").read_text(encoding="utf-8")
 
 

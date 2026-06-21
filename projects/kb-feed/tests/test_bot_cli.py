@@ -238,7 +238,7 @@ def test_review_assign_link_cli_writes_topic_queue_and_marks_inbox(tmp_path, cap
     )
 
     output = capsys.readouterr().out
-    assert "topic=obsidian reading_list=yes dive_queue=no marked_source=yes" in output
+    assert "topic=obsidian reading_list=yes research_idea=no marked_source=yes" in output
     reading_list = (kb_root / "topics" / "obsidian" / "reading-list.md").read_text(encoding="utf-8")
     assert "- [ ] https://example.com/unfiltered — belongs with note tooling" in reading_list
     inbox = (kb_root / "readinglist" / "Links.md").read_text(encoding="utf-8")
@@ -358,7 +358,7 @@ def test_digest_weekly_cli_writes_proposal_from_agent(tmp_path, monkeypatch, cap
         def complete(self, prompt):
             return "Summary\n- One unfiltered link needs review."
 
-    monkeypatch.setattr("kb_feed.bot.ClaudeCliDigestAgent", FakeAgent)
+    monkeypatch.setattr("kb_feed.bot.default_digest_agent", FakeAgent)
 
     proposals_dir = tmp_path / "proposals"
     main(
@@ -391,7 +391,7 @@ def test_digest_reply_cli_writes_agent_followup(tmp_path, monkeypatch, capsys) -
         def complete(self, prompt):
             return "Acknowledged\n- I will prepare exact review commands."
 
-    monkeypatch.setattr("kb_feed.bot.ClaudeCliDigestAgent", FakeAgent)
+    monkeypatch.setattr("kb_feed.bot.default_digest_agent", FakeAgent)
     proposals_dir = tmp_path / "proposals"
 
     main(

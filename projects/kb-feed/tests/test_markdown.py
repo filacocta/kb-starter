@@ -5,14 +5,14 @@ from datetime import date
 import pytest
 
 from kb_feed.errors import KbWriteRejected
-from kb_feed.markdown import append_dive_queue, append_topic_reading_list, telegram_annotation
+from kb_feed.markdown import append_topic_reading_list, telegram_annotation
 
 
 def test_append_topic_reading_list_requires_kb_bot_author(tmp_path) -> None:
     path = tmp_path / "reading-list.md"
     path.write_text(
         "---\n"
-        "author: human-user\n"
+        "author: brendan\n"
         "modified: 2026-05-01\n"
         "---\n\n"
         "# Reading List\n\n"
@@ -107,7 +107,7 @@ def test_append_topic_reading_list_uses_queue_substring_heading(tmp_path) -> Non
     assert text.index("## Approved Exact URL Queue") < text.index(line) < text.index("## Failed")
 
 
-def test_append_topic_reading_list_creates_queue_heading(tmp_path) -> None:
+def test_append_topic_reading_list_creates_pending_heading(tmp_path) -> None:
     path = tmp_path / "reading-list.md"
     path.write_text(
         "---\n"
@@ -125,45 +125,10 @@ def test_append_topic_reading_list_creates_queue_heading(tmp_path) -> None:
 
     text = path.read_text(encoding="utf-8")
     assert "modified: 2026-05-28" in text
-    assert text.index("Topic-specific inbox.") < text.index("## Queue") < text.index(line)
+    # New fallback heading is the canonical ## Pending (Phase-2 section ladder), not ## Queue.
+    assert text.index("Topic-specific inbox.") < text.index("## Pending") < text.index(line)
     assert text.index(line) < text.index("## Processed")
 
-
-def test_append_dive_queue_requires_existing_topic_heading(tmp_path) -> None:
-    path = tmp_path / "_dive-queue.md"
-    path.write_text(
-        "---\n"
-        "author: kb-bot\n"
-        "modified: 2026-05-01\n"
-        "---\n\n"
-        "# Dive Queue\n\n"
-        "## obsidian\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(KbWriteRejected):
-        append_dive_queue(path, "ai-literacy", "- [ ] https://example.com")
-
-
-def test_append_dive_queue_adds_line_under_topic(tmp_path) -> None:
-    path = tmp_path / "_dive-queue.md"
-    path.write_text(
-        "---\n"
-        "author: kb-bot\n"
-        "modified: 2026-05-01\n"
-        "---\n\n"
-        "# Dive Queue\n\n"
-        "## obsidian\n\n"
-        "## ai-literacy\n\n"
-        "## atmospheric-modeling\n",
-        encoding="utf-8",
-    )
-    line = "- [ ] https://example.com/ai — (via Telegram #ai-literacy, 2026-05-28)"
-
-    assert append_dive_queue(path, "ai-literacy", line, today=date(2026, 5, 28))
-
-    text = path.read_text(encoding="utf-8")
-    assert text.index("## ai-literacy") < text.index(line) < text.index("## atmospheric-modeling")
 
 
 def test_telegram_annotation_format() -> None:

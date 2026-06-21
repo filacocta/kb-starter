@@ -9,7 +9,7 @@ from pathlib import Path
 from kb_feed.errors import KbFeedError, KbWriteRejected
 from kb_feed.locking import exclusive_kb_write_lock
 from kb_feed.markdown import (
-    append_dive_queue,
+    append_research_idea,
     append_topic_reading_list,
     assert_kb_bot_authored,
     update_modified_date,
@@ -25,7 +25,7 @@ class ReviewResult:
     target_line: str
     marked_source: bool
     added_reading_list: bool = False
-    added_dive_queue: bool = False
+    added_research_idea: bool = False
 
 
 def assign_link(
@@ -34,7 +34,6 @@ def assign_link(
     url: str,
     topic_slug: str,
     reason: str | None = None,
-    add_to_dive_queue: bool = False,
     today: date | None = None,
     lock_path: Path | None = None,
 ) -> ReviewResult:
@@ -42,7 +41,6 @@ def assign_link(
     topic_slug = validate_topic_slug(topic_slug)
     inbox_path = kb_root / "readinglist" / "Links.md"
     reading_list = kb_root / "topics" / topic_slug / "reading-list.md"
-    dive_queue = kb_root / "_dive-queue.md"
 
     with exclusive_kb_write_lock(kb_root, lock_path):
         item = _find_link(inbox_path, url)
@@ -50,9 +48,6 @@ def assign_link(
         target_line = f"- [ ] {item.url} — {queue_reason}"
 
         added_reading = append_topic_reading_list(reading_list, target_line, today=captured_on)
-        added_dive = False
-        if add_to_dive_queue:
-            added_dive = append_dive_queue(dive_queue, topic_slug, target_line, today=captured_on)
         marked = _mark_checked(
             inbox_path,
             unchecked_prefix=f"- [ ] {item.display}",
@@ -65,7 +60,6 @@ def assign_link(
         target_line=target_line,
         marked_source=marked,
         added_reading_list=added_reading,
-        added_dive_queue=added_dive,
     )
 
 
@@ -81,17 +75,18 @@ def promote_inspiration(
     captured_on = today or date.today()
     topic_slug = validate_topic_slug(topic_slug)
     source_path = kb_root / "readinglist" / "topics.md"
-    dive_queue = kb_root / "_dive-queue.md"
+    research_ideas = kb_root / "topics" / topic_slug / "research-ideas.md"
 
     with exclusive_kb_write_lock(kb_root, lock_path):
         item_text = _find_inspiration(source_path, contains)
         target_text = _single_line(idea) or item_text
         target_line = f"- [ ] {target_text}"
-        added_dive = append_dive_queue(dive_queue, topic_slug, target_line, today=captured_on)
+        # Prose ideas go to the topic's research-ideas.md (## Ideas), not the generated _dive-queue.md.
+        added_idea = append_research_idea(research_ideas, topic_slug, target_line, today=captured_on)
         marked = _mark_checked(
             source_path,
             unchecked_prefix=f"- [ ] {item_text}",
-            checked_line=f"- [x] {item_text} — promoted to {topic_slug} dive queue {captured_on.isoformat()}",
+            checked_line=f"- [x] {item_text} — promoted to {topic_slug} research ideas {captured_on.isoformat()}",
             today=captured_on,
         )
     return ReviewResult(
@@ -99,7 +94,7 @@ def promote_inspiration(
         topic_slug=topic_slug,
         target_line=target_line,
         marked_source=marked,
-        added_dive_queue=added_dive,
+        added_research_idea=added_idea,
     )
 
 

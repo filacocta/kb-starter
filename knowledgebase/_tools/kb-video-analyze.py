@@ -40,7 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--workdir", help="Working directory for downloads and keyframes. Defaults to a tempdir.")
     parser.add_argument("--transcript-only", action="store_true", help="Skip frame sampling, OCR, and vision.")
     parser.add_argument("--no-ocr", action="store_true", help="Sample keyframes without OCR.")
-    parser.add_argument("--vision", action="store_true", help="Use agent CLI to describe likely figures/charts.")
+    parser.add_argument("--vision", action="store_true", help="Use Claude CLI to describe likely figures/charts.")
     parser.add_argument("--summary", action="store_true", help="Summarize transcript text with DeepSeek.")
     parser.add_argument("--whisper-model", default="base")
     parser.add_argument("--device", default="cpu")

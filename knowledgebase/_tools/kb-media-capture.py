@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Discover and capture media for the user's knowledge base."""
+"""Discover and capture media for Brendan's knowledge base."""
 
 from __future__ import annotations
 

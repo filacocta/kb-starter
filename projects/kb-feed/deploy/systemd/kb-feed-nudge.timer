@@ -1,0 +1,9 @@
+[Unit]
+Description=Run the kb-feed triage nudge twice a week
+
+[Timer]
+OnCalendar=Wed,Sat *-*-* 09:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

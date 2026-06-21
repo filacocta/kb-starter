@@ -143,6 +143,47 @@ class LlmClient:
         response = self._transport(url, headers, body, self._config.timeout_seconds)
         return _extract_json_payload(response)
 
+    def complete_text(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.2,
+    ) -> str:
+        """Send one chat completion that returns free-form text (Markdown)."""
+        url = f"{self._config.api_base}/chat/completions"
+        payload = {
+            "model": self._config.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": temperature,
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self._config.api_key}",
+        }
+        body = json.dumps(payload).encode("utf-8")
+        LOGGER.info(
+            "llm-call provider=%s model=%s prompt_chars=%d",
+            self._config.provider,
+            self._config.model,
+            len(system_prompt) + len(user_prompt),
+        )
+        response = self._transport(url, headers, body, self._config.timeout_seconds)
+        return _extract_text_payload(response)
+
+
+def _extract_text_payload(response: dict[str, Any]) -> str:
+    choices = response.get("choices") or []
+    if not choices:
+        raise KbFeedError("LLM response had no choices.")
+    content = (choices[0].get("message") or {}).get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise KbFeedError("LLM response had empty content.")
+    return content.strip()
+
 
 def _extract_json_payload(response: dict[str, Any]) -> dict[str, Any]:
     choices = response.get("choices") or []

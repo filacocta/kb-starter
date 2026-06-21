@@ -161,7 +161,9 @@
     </div>
     <div class="panel">
       <ul>
-        <li><code>kb-checkoff.py</code> — mark reading-list items done (shared write path).</li>
+        <li><code>kb-checkoff.py</code> — mark a reading-list item in place (the "mark" verb; shared write path).</li>
+        <li><code>kb-promote.py</code> — move a queue line between ladder sections, e.g. Pending→Approved→Auto-approved (the "move" verb).</li>
+        <li><code>kb-capture-url.py</code> — add a new URL to a topic's <code>## Pending</code> or the global inbox (the "add" verb).</li>
         <li><code>kb-seen.py</code> — dedup against already-ingested URLs.</li>
         <li><code>kb-lint.py</code> — the lint engine behind <code>/kb-lint</code>.</li>
         <li><code>kb-derive-dive-queue.py</code> — regenerate the research dive queue.</li>

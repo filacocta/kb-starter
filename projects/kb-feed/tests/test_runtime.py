@@ -125,7 +125,8 @@ def test_process_message_rejects_unauthorized_user(tmp_path) -> None:
     assert result.reply_text == "This Telegram user is not allowed for kb-feed."
 
 
-def test_process_message_replies_for_unmapped_thread(tmp_path) -> None:
+def test_process_message_quarantines_unmapped_thread(tmp_path) -> None:
+    store = _store(tmp_path)
     result = process_message(
         FakeMessage(
             chat=FakeChat(-100123),
@@ -134,13 +135,19 @@ def test_process_message_replies_for_unmapped_thread(tmp_path) -> None:
             text="https://example.com/a",
             entities=[FakeEntity(type="url", offset=0, length=21)],
         ),
-        _store(tmp_path),
+        store,
         allowed_chat_id=-100123,
         resolver=_resolver("93.184.216.34"),
     )
 
-    assert result.status == "unmapped_thread"
-    assert result.reply_text == "No KB topic mapping exists for Telegram thread 999."
+    # Unmapped TOPIC-thread URLs are quarantined to the global inbox (lossless), not dropped.
+    assert result.status == "quarantined"
+    assert "global inbox" in result.reply_text
+    assert len(result.outbox_ids) == 1
+    row = store.get_outbox(result.outbox_ids[0])
+    assert row.topic_slug == "unfiltered"  # routed to Links.md
+    assert "unmapped thread 999" in (row.note or "")
+    assert store.get_meta("quarantined_unmapped_thread_total") == "1"
 
 
 def test_process_message_ignores_general_chat_without_urls(tmp_path) -> None:
@@ -608,7 +615,7 @@ def test_kbdigest_from_private_dm_by_allowed_user_succeeds(tmp_path, monkeypatch
     async def fake_to_thread(func, /, *args, **kwargs):
         return func(*args, **kwargs)
 
-    monkeypatch.setattr(runtime, "ClaudeCliDigestAgent", lambda: object())
+    monkeypatch.setattr(runtime, "default_digest_agent", lambda: object())
     monkeypatch.setattr(runtime, "weekly_digest", fake_weekly_digest)
     monkeypatch.setattr(runtime.asyncio, "to_thread", fake_to_thread)
 
@@ -637,13 +644,13 @@ def test_kbreply_from_private_dm_by_allowed_user_succeeds(tmp_path, monkeypatch)
     async def fake_to_thread(func, /, *args, **kwargs):
         return func(*args, **kwargs)
 
-    monkeypatch.setattr(runtime, "ClaudeCliDigestAgent", lambda: object())
+    monkeypatch.setattr(runtime, "default_digest_agent", lambda: object())
     monkeypatch.setattr(runtime, "process_digest_reply", fake_process_digest_reply)
     monkeypatch.setattr(runtime.asyncio, "to_thread", fake_to_thread)
 
     asyncio.run(handle_kbreply(SimpleNamespace(effective_message=message), context))
 
-    assert message.replies == ["Sending your digest reply to Claude...", "reply result"]
+    assert message.replies == ["Processing your digest reply...", "reply result"]
 
 
 def test_command_from_private_dm_by_unknown_user_is_rejected(tmp_path) -> None:
@@ -857,8 +864,9 @@ def test_map_command_slash_form(tmp_path) -> None:
     assert store.topic_slug_for_thread(556) == "obsidian"
 
 
-def test_map_command_rejects_unknown_topic(tmp_path) -> None:
+def test_map_command_creates_unknown_topic(tmp_path) -> None:
     store = _store(tmp_path)
+    kb_root = _kb_fixture(tmp_path)
     result = process_message(
         FakeMessage(
             chat=FakeChat(-100123),
@@ -868,11 +876,17 @@ def test_map_command_rejects_unknown_topic(tmp_path) -> None:
         ),
         store,
         allowed_chat_id=-100123,
-        kb_root=_kb_fixture(tmp_path),
+        kb_root=kb_root,
     )
 
-    assert result.status == "map_no_topic"
-    assert store.topic_slug_for_thread(557) is None
+    # Mapping to a non-existent topic creates the topic skeleton and maps it.
+    assert result.status == "mapped"
+    assert "Created KB topic 'does-not-exist'" in result.reply_text
+    assert store.topic_slug_for_thread(557) == "does-not-exist"
+    reading_list = kb_root / "topics" / "does-not-exist" / "reading-list.md"
+    assert reading_list.exists()
+    assert "## Pending" in reading_list.read_text(encoding="utf-8")
+    assert (kb_root / "topics" / "does-not-exist" / "research-ideas.md").exists()
 
 
 def test_map_command_requires_thread(tmp_path) -> None:

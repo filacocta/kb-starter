@@ -1,7 +1,7 @@
 ---
 author: kb-bot
 created: 2026-04-09
-modified: 2026-06-03
+modified: 2026-06-19
 type: meta
 ---
 
@@ -26,6 +26,7 @@ This KB is **LLM-agnostic**. All conventions are plain English. No model-specifi
 - If a file exists and lacks `author: kb-bot` → do not touch it. It belongs to the human.
 - If a file does not yet exist → you may create it, and you must include `author: kb-bot` in its frontmatter.
 - The single sanctioned exception is the clippings flow defined in Rule 23: human-authored clipping files in `clippings/` may be *read* (not modified) as ingestion input. All other writes require kb-bot authorship.
+- Raw binary source files under `_library/books/` or `_library/docs/` are custody files, not Markdown notes. They are exempt from frontmatter because PDFs/EPUBs cannot carry KB YAML, but every agent-created Markdown control file in `_library/` still requires `author: kb-bot`.
 - When in doubt, do not write.
 
 ---
@@ -49,6 +50,10 @@ knowledgebase/
     images/           ← images stored as images/YYYY/MM/<date>-<description>-<short-hash>.<ext>
     videos/           ← videos stored as videos/YYYY/MM/<date>-<description>-<short-hash>.<ext>
     audio/            ← audio stored as audio/YYYY/MM/<date>-<description>-<short-hash>.<ext>
+  _library/           ← raw source custody; not a topic and not a citation surface
+    _README.md        ← source custody policy and path conventions
+    books/            ← local books, EPUBs, scanned books, and long-form PDFs grouped by source cluster or subject
+    docs/             ← non-book source PDFs/reports/reference documents grouped by topic or project
   readinglist/
     Links.md          ← global URL inbox: dump URLs here without a topic; agent assigns and processes
     topics.md         ← broad topic interests without specific sources yet; triaged into topic reading-lists / research-ideas

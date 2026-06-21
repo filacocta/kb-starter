@@ -6,12 +6,14 @@ from pathlib import Path
 
 from kb_feed.bootstrap import bootstrap_seen_urls
 from kb_feed.config import load_config
-from kb_feed.digest import ClaudeCliDigestAgent, process_digest_reply, remind_due_digest, send_digest_to_users, weekly_digest
+from kb_feed.digest import default_digest_agent, process_digest_reply, remind_due_digest, send_digest_to_users, weekly_digest
 from kb_feed.dry_run import LIVE_KB_ROOT, dry_run_update, parse_topic_map
 from kb_feed.llm import LlmUnavailable, load_llm_config_from_env, LlmClient
 from kb_feed.review import assign_link, promote_inspiration
 from kb_feed.runtime import run_polling
 from kb_feed.state import DEFAULT_STATE_DB, StateStore
+from kb_feed.doctor import build_doctor_report
+from kb_feed.nudge import build_nudge_text, count_pending_proposals
 from kb_feed.triage import (
     DEFAULT_INACTIVITY_HOURS,
     triage_inspiration,
@@ -98,6 +100,22 @@ def main(argv: list[str] | None = None) -> None:
     outbox_flush.add_argument("--git-user-name", default="kb-bot")
     outbox_flush.add_argument("--git-user-email", default="noreply@kb-feed.local")
 
+    doctor = subcommands.add_parser(
+        "doctor",
+        help="Diagnose kb-feed health: thread mappings, blind/unmapped topics, dropped messages, queue backlog.",
+    )
+    _add_state_db_arg(doctor)
+    doctor.add_argument("--kb-root", type=Path, default=Path("~/Vault/knowledgebase"))
+
+    nudge = subcommands.add_parser(
+        "nudge",
+        help="Count links/notes/proposals awaiting triage; optionally DM the nudge (for a timer).",
+    )
+    _add_state_db_arg(nudge)
+    nudge.add_argument("--kb-root", type=Path, default=Path("~/Vault/knowledgebase"))
+    nudge.add_argument("--send-telegram", action="store_true")
+    nudge.add_argument("--user-id", type=int, action="append", default=[], dest="user_ids")
+
     triage = subcommands.add_parser("triage", help="Run LLM triage over capture lanes.")
     triage_subcommands = triage.add_subparsers(dest="triage_command", required=True)
     triage_links_p = triage_subcommands.add_parser(
@@ -139,22 +157,17 @@ def main(argv: list[str] | None = None) -> None:
     review_assign.add_argument("--url", required=True)
     review_assign.add_argument("--topic", required=True)
     review_assign.add_argument("--reason", default=None)
-    review_assign.add_argument(
-        "--dive",
-        action="store_true",
-        help="Also add the item to _dive-queue.md when it is an intentional investigation target.",
-    )
     review_assign.add_argument("--allow-live-kb", action="store_true")
     review_assign.add_argument("--lock-path", type=Path, default=None)
 
     review_promote = review_subcommands.add_parser(
         "promote-inspiration",
-        help="Promote one unchecked inspiration note into a topic dive queue.",
+        help="Promote one unchecked inspiration note into a topic's research-ideas.md.",
     )
     review_promote.add_argument("--kb-root", type=Path, required=True)
     review_promote.add_argument("--contains", required=True, help="Unique substring matching the source inbox note.")
     review_promote.add_argument("--topic", required=True)
-    review_promote.add_argument("--idea", default=None, help="Optional rewritten dive-queue item.")
+    review_promote.add_argument("--idea", default=None, help="Optional rewritten research-idea line.")
     review_promote.add_argument("--allow-live-kb", action="store_true")
     review_promote.add_argument("--lock-path", type=Path, default=None)
 
@@ -224,6 +237,12 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.command == "triage":
         _run_triage(args)
+        return
+    if args.command == "doctor":
+        _run_doctor(args)
+        return
+    if args.command == "nudge":
+        _run_nudge(args)
         return
     if args.command == "review":
         _run_review(args)
@@ -346,6 +365,30 @@ def _run_outbox(args: argparse.Namespace) -> None:
     raise SystemExit("outbox subcommand is required.")
 
 
+def _run_doctor(args: argparse.Namespace) -> None:
+    store = StateStore(args.state_db)
+    kb_root = args.kb_root.expanduser()
+    print(f"KB root: {kb_root}")
+    print(f"State DB: {store.path}")
+    print(build_doctor_report(store, kb_root))
+
+
+def _run_nudge(args: argparse.Namespace) -> None:
+    store = StateStore(args.state_db)
+    kb_root = args.kb_root.expanduser()
+    proposals = count_pending_proposals(store.path.parent / "proposals")
+    text = build_nudge_text(kb_root, proposals_pending=proposals)
+    if text is None:
+        print("nudge: inbox clear")
+        return
+    print(text)
+    if args.send_telegram:
+        config = load_config()
+        user_ids = tuple(args.user_ids) or store.list_allowed_users() or config.allowed_users
+        sent = send_digest_to_users(bot_token=config.telegram_bot_token, user_ids=user_ids, text=text)
+        print(f"telegram_sent={sent}")
+
+
 def _run_triage(args: argparse.Namespace) -> None:
     store = StateStore(args.state_db)
     proposals_dir = (args.proposals_dir or store.path.parent / "proposals").expanduser()
@@ -402,7 +445,6 @@ def _run_review(args: argparse.Namespace) -> None:
             url=args.url,
             topic_slug=args.topic,
             reason=args.reason,
-            add_to_dive_queue=args.dive,
             lock_path=args.lock_path,
         )
     elif args.review_command == "promote-inspiration":
@@ -421,7 +463,7 @@ def _run_review(args: argparse.Namespace) -> None:
             [
                 f"topic={result.topic_slug}",
                 f"reading_list={'yes' if result.added_reading_list else 'no'}",
-                f"dive_queue={'yes' if result.added_dive_queue else 'no'}",
+                f"research_idea={'yes' if result.added_research_idea else 'no'}",
                 f"marked_source={'yes' if result.marked_source else 'no'}",
             ]
         )
@@ -436,7 +478,7 @@ def _run_digest(args: argparse.Namespace) -> None:
         report = weekly_digest(
             store,
             args.kb_root,
-            agent=ClaudeCliDigestAgent(),
+            agent=default_digest_agent(),
             proposals_dir=proposals_dir,
         )
         sent = 0
@@ -487,7 +529,7 @@ def _run_digest(args: argparse.Namespace) -> None:
         report = process_digest_reply(
             store,
             decision_text=args.text,
-            agent=ClaudeCliDigestAgent(),
+            agent=default_digest_agent(),
             proposals_dir=proposals_dir,
         )
         sent = 0

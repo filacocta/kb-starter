@@ -13,7 +13,7 @@ from kb_feed.dry_run import LIVE_KB_ROOT
 from kb_feed.errors import KbFeedError
 from kb_feed.locking import exclusive_kb_write_lock
 from kb_feed.markdown import (
-    append_dive_queue,
+    append_research_idea,
     append_review_queue,
     append_topic_auto_approved,
     append_topic_reading_list,
@@ -202,7 +202,10 @@ def _write_capture_row(row: CaptureRow, kb_root: Path, captured_on: date) -> Non
             raise KbFeedError("topic-idea capture is missing topic_slug.")
         topic_slug = validate_topic_slug(row.topic_slug)
         line = f"- [ ] {_single_line(row.text)} — {telegram_annotation(topic_slug, captured_on)}"
-        append_dive_queue(kb_root / "_dive-queue.md", topic_slug, line, today=captured_on)
+        # Prose topic ideas belong in the topic's research-ideas.md (## Ideas), NOT the
+        # generated/read-only _dive-queue.md — which the post-flush regeneration would clobber.
+        research_ideas = kb_root / "topics" / topic_slug / "research-ideas.md"
+        append_research_idea(research_ideas, topic_slug, line, today=captured_on)
         return
     raise KbFeedError(f"Unsupported capture type: {row.capture_type}")
 
@@ -342,8 +345,8 @@ def _changed_paths_for_capture_rows(rows: tuple[CaptureRow, ...]) -> list[str]:
     for row in rows:
         if row.capture_type == "inspiration-capture":
             paths.add("readinglist/topics.md")
-        elif row.capture_type == "topic-idea":
-            paths.add("_dive-queue.md")
+        elif row.capture_type == "topic-idea" and row.topic_slug:
+            paths.add(f"topics/{row.topic_slug}/research-ideas.md")
     return sorted(paths)
 
 

@@ -428,6 +428,95 @@ function renderKbFeed(feed) {
   `;
 }
 
+function renderProvenance(prov) {
+  const summary = $("provenance-summary");
+  const content = $("provenance-panel").querySelector(".content");
+  if (!prov || !prov.total) {
+    if (summary) summary.textContent = "No captured items.";
+    content.innerHTML = '<div class="muted">No captured items found.</div>';
+    return;
+  }
+  if (summary) summary.textContent = `${prov.total} captured · ${prov.open} open`;
+  const srcChip = (label, b) => {
+    const cls = b.open > 0 ? "count-chip warn" : "count-chip";
+    return `<span class="${cls}">${label}: ${b.total}${b.open ? ` (${b.open} open)` : ""}</span>`;
+  };
+  const subChips = (obj, prefix) =>
+    Object.entries(obj)
+      .map(([name, b]) => `<span class="count-chip${b.open ? " warn" : ""}">${prefix}${escapeHtml(name)}: ${b.total}${b.open ? ` (${b.open})` : ""}</span>`)
+      .join("") || '<span class="muted">none</span>';
+  const s = prov.by_source;
+  const route = prov.capture_topic
+    ? `<span class="status-pill ok">#${escapeHtml(prov.capture_topic)} · ## Pending</span>`
+    : `<span class="status-pill">global inbox (Links.md)</span>`;
+  content.innerHTML = `
+    <div class="list">
+      <div class="queue-counts">
+        ${srcChip("Telegram", s.telegram)}
+        ${srcChip("Agent", s.agent)}
+        ${srcChip("Manual / untagged", s.manual)}
+      </div>
+      <div class="hint">Agent web-fetch captures currently route to: ${route} <span class="muted">(set via <code>~/.local/state/kb-feed/capture-topic</code>)</span></div>
+      <div><strong>Telegram threads</strong><div class="queue-counts compact">${subChips(prov.telegram_threads, "#")}</div></div>
+      <div><strong>Agents</strong><div class="queue-counts compact">${subChips(prov.agents, "")}</div></div>
+      <div class="hint">Open = still unchecked in its queue. Manual/untagged are mostly pre-capture-hook items with no provenance tag.</div>
+    </div>
+  `;
+}
+
+function renderTimers(timers) {
+  const host = $("timers");
+  if (!host) return;
+  if (!timers || !timers.length) {
+    host.innerHTML = '<div class="muted">No kb-feed timers found.</div>';
+    return;
+  }
+  host.innerHTML = timers.map((t) => {
+    let pill;
+    let action = "";
+    if (!t.available) {
+      pill = '<span class="status-pill warn">unavailable</span>';
+    } else if (!t.installed) {
+      pill = '<span class="status-pill">not installed</span>';
+      action = `<button class="path-button" type="button" data-copy="${escapeHtml(t.install_cmd || "")}">Copy install command</button>`;
+    } else {
+      pill = t.active
+        ? '<span class="status-pill ok">active</span>'
+        : '<span class="status-pill">inactive</span>';
+      const act = t.active ? "disable" : "enable";
+      action = `<button type="button" data-timer-toggle="${act}" data-timer-unit="${escapeHtml(t.unit)}">${t.active ? "Disable" : "Enable"}</button>`;
+    }
+    const meta = [];
+    if (t.next) meta.push(`next ${escapeHtml(t.next)}`);
+    if (t.last) meta.push(`last ${escapeHtml(t.last)}`);
+    return `<article class="queue-card">
+      <span class="queue-title">${escapeHtml(t.label)}</span>
+      <div>${pill}</div>
+      <p class="hint" style="margin-top:6px">${escapeHtml(t.desc)}</p>
+      ${meta.length ? `<p class="hint">${meta.join(" · ")}</p>` : ""}
+      <div class="queue-counts">${action}</div>
+    </article>`;
+  }).join("");
+}
+
+async function toggleTimer(unit, action) {
+  if (!window.confirm(`${action === "enable" ? "Enable" : "Disable"} ${unit}?`)) return;
+  try {
+    const response = await fetch(`/api/timer/${action}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ unit }),
+    });
+    const data = await response.json();
+    if (data.ok) {
+      showToast(`${unit}: ${action}d`);
+      loadStatus();
+    } else {
+      showToast(`Failed: ${data.message || data.error || "error"}`);
+    }
+  } catch (error) {
+    showToast(`Request failed: ${error}`);
+  }
+}
+
 function allQueues(data) {
   return [...data.global_queues, data.ideas_backlog, data.dive_queue, ...data.topics.map((topic) => topic.queue).filter(Boolean)].filter(Boolean);
 }
@@ -748,6 +837,8 @@ function render(data) {
   renderAttention(data);
   renderCheckpoint(data.checkpoint);
   renderKbFeed(data.kb_feed);
+  renderProvenance(data.provenance);
+  renderTimers(data.kb_feed_timers);
   renderQueues(data);
   renderTopics(data);
   renderProjects(data);
@@ -782,8 +873,12 @@ $("topic-filter").addEventListener("input", (event) => {
 $("drawer-close").addEventListener("click", closeDrawer);
 
 document.addEventListener("click", (event) => {
-  const target = event.target.closest("[data-queue-path], [data-topic-mode], [data-topic-sort], [data-project-sort], [data-copy]");
+  const target = event.target.closest("[data-queue-path], [data-topic-mode], [data-topic-sort], [data-project-sort], [data-copy], [data-timer-toggle]");
   if (!target) return;
+  if (target.dataset.timerToggle) {
+    toggleTimer(target.dataset.timerUnit, target.dataset.timerToggle);
+    return;
+  }
   if (target.dataset.queuePath) {
     showQueueDetails(target.dataset.queuePath);
   } else if (target.dataset.topicMode) {
