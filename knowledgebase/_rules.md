@@ -192,6 +192,8 @@ When the user asks for a list of topics for further study, read the derived `_di
 
 When a reading-list item is ingested, mark it `[x]` in the topic `reading-list.md` with the date and source note path using `_tools/kb-checkoff.py` or an equivalent shared-lock path.
 
+Marking and moving are distinct verbs over the shared write lock: `_tools/kb-checkoff.py` flips a line's checkbox **in place** (`[ ]`→`[x]/[!]/[~]/[?]`); `_tools/kb-promote.py` **moves** a `- [ ]` line between canonical ladder sections (`--from`/`--to`, e.g. `Pending → Approved → Auto-approved`). Use `kb-promote.py` for all section moves — never hand-edit the markdown to relocate an item. See `_tools/README.md` for the full endpoint reference.
+
 ---
 
 ## Rule 14 — Topic Placement and Promotion

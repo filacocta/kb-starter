@@ -51,7 +51,7 @@ knowledgebase/
     audio/            ← audio stored as audio/YYYY/MM/<date>-<description>-<short-hash>.<ext>
   readinglist/
     Links.md          ← global URL inbox: dump URLs here without a topic; agent assigns and processes
-    topics.md         ← broad topic interests without specific sources yet; feeds into _dive-queue.md
+    topics.md         ← broad topic interests without specific sources yet; triaged into topic reading-lists / research-ideas
   topics/
     <topic-slug>/
       _summary.md     ← compressed overview of this topic (read this first)
@@ -136,7 +136,7 @@ Topic reading lists are the canonical writable queues for source candidates. Eve
 | `## Processed` | Ingested. Items marked `[x]` with date + source-note path. | Terminal |
 | `## Failed — Retry` | Fetch/ingest failed; awaiting manual retry (Rule 18). | Interactive |
 
-**Promotion is upward and explicit:** `Pending → Approved → Auto-approved`. Move an item between sections when promoting/demoting — never duplicate the same URL across sections.
+**Promotion is upward and explicit:** `Pending → Approved → Auto-approved`. Move an item between sections when promoting/demoting — never duplicate the same URL across sections. Perform the move with `_tools/kb-promote.py` (shared write-lock, atomic; the sanctioned "move" verb, distinct from `kb-checkoff.py` which only flips the mark in place) — never hand-edit the section.
 
 **The `## Auto-approved` gate.** Only the user, an interactive agent after explicit approval, or kb-feed under Rule 31's trusted-lane policy may place items here. Promote to `## Auto-approved` (rather than leaving in `## Approved`) only when the item is safe to fetch with **no human watching**: text-first, not paywalled, needs no interactive capture (OCR/video/figure selection/Wikipedia citation discovery), and comes from a trusted source. Everything else that is vetted stays in `## Approved` for interactive ingestion. `/kb-auto` and other unattended agents scan **only** `## Auto-approved`, stop at the next level-2 heading, and process only unchecked URL-first or local-PDF lines. Text-only items never belong in `## Auto-approved`.
 
