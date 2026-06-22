@@ -8,8 +8,8 @@ title: "Obsidian Flavored Markdown (OFM)"
 description: "Obsidian uses a dialect of Markdown called Obsidian Flavored Markdown (OFM), which combines CommonMark, GitHub Flavored Markdown (GFM), and LaTeX with several Obsidian-specific ext"
 status: draft
 tags: ["obsidian", "markdown", "ofm", "formatting", "callouts", "latex"]
-sources: ["[[sources/2026-04-10-obsidian-basic-formatting]]", "[[sources/2026-04-10-obsidian-flavored-markdown]]"]
-related: ["[[notes/concepts/obsidian-overview]]", "[[notes/concepts/obsidian-internal-links]]"]
+sources: ["[[knowledgebase/topics/obsidian/sources/2026-04-10-obsidian-basic-formatting]]", "[[knowledgebase/topics/obsidian/sources/2026-04-10-obsidian-flavored-markdown]]"]
+related: ["[[knowledgebase/topics/obsidian/notes/concepts/obsidian-overview]]", "[[knowledgebase/topics/obsidian/notes/concepts/obsidian-internal-links]]"]
 ---
 
 # Obsidian Flavored Markdown (OFM)
@@ -48,7 +48,7 @@ Obsidian uses a dialect of Markdown called **Obsidian Flavored Markdown (OFM)**,
 
 **Highlight:** `==text==` — renders as yellow highlight. Not in CommonMark or GFM; Obsidian-only.
 
-**Internal wikilinks:** `[[Note name]]` — links to another note in the vault. See [[notes/concepts/obsidian-internal-links]] for the full system.
+**Internal wikilinks:** `[[Note name]]` — links to another note in the vault. See [[knowledgebase/topics/obsidian/notes/concepts/obsidian-internal-links]] for the full system.
 
 **File embeds:** `![[Note name]]` — transclude the entire content of another note inline. Works for notes, images, audio, video, and PDFs.
 
@@ -82,5 +82,5 @@ A blank line creates a new paragraph. A single Enter within a block creates a li
 
 ## See Also
 
-- [[notes/concepts/obsidian-internal-links]] — the wikilink and embedding system in depth
-- [[notes/concepts/obsidian-overview]] — Obsidian as a whole
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-internal-links]] — the wikilink and embedding system in depth
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-overview]] — Obsidian as a whole

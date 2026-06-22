@@ -1,0 +1,4 @@
+interface:
+  display_name: "Book to Skill"
+  short_description: "Turn source clusters into tested skills."
+  default_prompt: "Use $book-to-skill to evaluate whether this source cluster should become a reusable Codex skill."

@@ -9,7 +9,7 @@ description: "> *Agent inference — primary source fetch failed (path not found
 status: draft
 tags: ["obsidian", "dataview", "plugin", "query", "database", "frontmatter"]
 sources: []
-related: ["[[notes/concepts/obsidian-overview]]", "[[notes/concepts/obsidian-plugins]]", "[[notes/concepts/obsidian-markdown]]"]
+related: ["[[knowledgebase/topics/obsidian/notes/concepts/obsidian-overview]]", "[[knowledgebase/topics/obsidian/notes/concepts/obsidian-plugins]]", "[[knowledgebase/topics/obsidian/notes/concepts/obsidian-markdown]]"]
 ---
 
 # Dataview
@@ -110,5 +110,5 @@ Dataview is the query layer that makes the `_dive-queue.md` tag-based browsing i
 
 ## See Also
 
-- [[notes/concepts/obsidian-plugins]] — plugin ecosystem context
-- [[notes/concepts/obsidian-overview]] — vault structure that Dataview queries
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-plugins]] — plugin ecosystem context
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-overview]] — vault structure that Dataview queries

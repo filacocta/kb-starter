@@ -9,7 +9,7 @@ description: "> *Agent inference — the official CLI docs page (https://obsidia
 status: draft
 tags: ["obsidian", "cli", "automation", "headless", "terminal"]
 sources: []
-related: ["[[notes/concepts/obsidian-overview]]", "[[notes/concepts/obsidian-uri-protocol]]", "[[notes/concepts/obsidian-plugins]]"]
+related: ["[[knowledgebase/topics/obsidian/notes/concepts/obsidian-overview]]", "[[knowledgebase/topics/obsidian/notes/concepts/obsidian-uri-protocol]]", "[[knowledgebase/topics/obsidian/notes/concepts/obsidian-plugins]]"]
 ---
 
 # Obsidian CLI
@@ -26,7 +26,7 @@ The Obsidian CLI exposes vault management operations at the command line:
 - **Trigger commands** — run any command that is available in Obsidian's Command Palette programmatically
 - **Non-interactive operations** — useful for scripting, CI, and automation contexts where you want to interact with vault content without launching the GUI
 
-This complements the [[notes/concepts/obsidian-uri-protocol|URI protocol]] (which is designed for inter-application calls and document links) by providing a scriptable terminal interface.
+This complements the [[knowledgebase/topics/obsidian/notes/concepts/obsidian-uri-protocol|URI protocol]] (which is designed for inter-application calls and document links) by providing a scriptable terminal interface.
 
 ## Installation
 
@@ -58,6 +58,6 @@ This note should be updated once the CLI documentation is successfully ingested.
 
 ## See Also
 
-- [[notes/concepts/obsidian-uri-protocol]] — the URI protocol as a complement to the CLI
-- [[notes/concepts/obsidian-overview]] — Obsidian architecture overview
-- [[notes/concepts/obsidian-plugins]] — plugin commands that the CLI can trigger
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-uri-protocol]] — the URI protocol as a complement to the CLI
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-overview]] — Obsidian architecture overview
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-plugins]] — plugin commands that the CLI can trigger

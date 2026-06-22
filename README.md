@@ -1,8 +1,8 @@
 # kb-starter
 
-A self-contained starter kit for a personal knowledge base built on [Obsidian](https://obsidian.md) and operated by LLMs via [Claude Code](https://claude.ai/code). Clone this repo to get the Obsidian plugin, the six Claude Code skills, and a blank-but-seeded knowledgebase ready to use.
+A self-contained starter kit for a personal knowledge base built on [Obsidian](https://obsidian.md) and operated by LLMs or local tooling. Clone this repo to get the Obsidian plugin, KB skills, reusable workflow tools, optional Telegram capture bot, optional local workflow dashboard, and a blank-but-seeded knowledgebase ready to use.
 
-The system is **LLM-agnostic**: all conventions are plain English and any capable LLM can operate the KB by reading `knowledgebase/_schema.md`. The skills are Claude Code skills, but the KB itself can be queried by any model.
+The system is **LLM-agnostic**: all conventions are plain English and any capable LLM can operate the KB by reading `knowledgebase/_schema.md`. The included skills are written for agent-CLI workflows, but the KB itself can be queried by any model.
 
 ---
 
@@ -10,16 +10,18 @@ The system is **LLM-agnostic**: all conventions are plain English and any capabl
 
 | Folder | Contents |
 |---|---|
-| `plugin/` | `kb-bot` — Obsidian plugin source. Adds an "Ask Claude" command that pops a modal, calls the Anthropic API, and inserts the response as a callout block. |
-| `skills/` | Six Claude Code skills that operate the KB from the terminal. |
-| `knowledgebase/` | Blank starter KB with schema, rules, and the `obsidian` topic pre-seeded. Copy this into your Obsidian vault. |
+| `plugin/` | `kb-bot` — Obsidian plugin source. Adds an in-vault ask command backed by a configured LLM API. |
+| `skills/` | KB skills that operate the KB from an agent CLI. |
+| `knowledgebase/` | Blank starter KB with schema, rules, shared `_tools/`, ideas backlog, and the `obsidian` topic pre-seeded. Copy this into your Obsidian vault. |
+| `projects/kb-feed/` | Optional Telegram capture bot that routes mobile-shared URLs and notes into KB queues. |
+| `projects/kb-workflow-dashboard/` | Optional read-only local web dashboard for KB workflow status. |
 
 ---
 
 ## Prerequisites
 
 - [Obsidian](https://obsidian.md) (any recent version)
-- [Claude Code](https://claude.ai/code) CLI
+- An agent CLI capable of reading local files and running shell commands
 - Node.js 18+ and npm (for building the plugin)
 - `pdftotext` for PDF ingestion:
   ```bash
@@ -56,7 +58,7 @@ In Obsidian: **Settings → Community Plugins → KB Bot → Enable**. Then add 
 bash skills/install.sh
 ```
 
-This copies the six skills to `~/.claude/skills/` and creates `~/.claude/kb-config.md` with placeholder values.
+This copies the included KB skills to `~/.claude/skills/` and creates `~/.claude/kb-config.md` with placeholder values.
 
 ### 3. Configure your KB path
 
@@ -70,7 +72,7 @@ VAULT_NAME: your-vault-name
 - `KB_ROOT` — absolute path to the `knowledgebase/` folder inside your Obsidian vault
 - `VAULT_NAME` — the name of your Obsidian vault (used in `obsidian://` deep links)
 
-All six skills read this file at startup. You only need to set it once.
+All KB skills read this file at startup. You only need to set it once.
 
 ### 4. Copy the starter KB
 
@@ -83,12 +85,15 @@ The `knowledgebase/` folder includes:
 - `_rules.md` — behavioural rules (authorship guard, navigation protocol, citation standards, etc.)
 - `_index.md` — navigation index (starts with just the `obsidian` topic)
 - Blank stubs for `_log.md`, `_checkpoint.md`, `_dive-queue.md`, `_todo.md`
+- `_tools/` — shared scripts for linting, dedup, queue checkoff, derived dive-queue regeneration, media capture, tweet/video extraction, and prep checks
+- `ideas/_backlog.md` — durable parking lot for broad ideas that are not yet topics or projects
 - `readinglist/Links.md` — global URL inbox
 - `topics/obsidian/` — pre-seeded topic documenting the Obsidian ecosystem (useful reference for any KB operating in Obsidian)
+- `projects/kb-feed/` and `projects/kb-workflow-dashboard/` — KB-native project records for the optional workflow tools in this repo
 
 ### 5. Verify
 
-In a Claude Code session, run:
+In an agent CLI session, run:
 
 ```
 /kb-ask
@@ -107,7 +112,36 @@ The skill should load, read your config, and show the opening menu.
 | `/kb-queue [topic]` | Batch process a topic's reading list. Per-item approval checklist with pause/resume for overnight runs. |
 | `/kb-synthesise [topic]` | Generate concept/entity/synthesis notes from accumulated sources. Presents an approval plan before writing. |
 | `/kb-lint [topic]` | Health check: broken wikilinks, orphan pages, missing stubs, incomplete frontmatter, contradictions, stale sources. |
-| `/kb-auto [topic]` | Headless autonomous ingestion from `_dive-queue.md`. Designed for `/schedule` or `/loop` runs. |
+| `/kb-auto [topic]` | Headless autonomous ingestion from topic reading-list `## Auto-approved` sections. `_dive-queue.md` is generated/read-only. |
+
+---
+
+## Optional workflow tools
+
+### kb-feed
+
+`projects/kb-feed/` is a Python Telegram capture bot. It does not ingest sources. It validates messages, maps Telegram topic threads to KB topic slugs, writes queue entries, and keeps runtime state in SQLite outside the repo.
+
+```bash
+cd projects/kb-feed
+python3 -m venv .venv
+.venv/bin/pip install -e '.[dev]'
+mkdir -p ~/.config/kb-feed ~/.local/state/kb-feed
+cp credentials.env.example ~/.config/kb-feed/credentials.env
+cp config.example.toml ~/.config/kb-feed/kb-feed.toml
+```
+
+Read `projects/kb-feed/README.md` before enabling live writes.
+
+### KB workflow dashboard
+
+`projects/kb-workflow-dashboard/` is a dependency-free local web dashboard. It is read-only in the MVP.
+
+```bash
+python3 projects/kb-workflow-dashboard/server.py --kb-root /path/to/your/vault/knowledgebase
+```
+
+Open `http://127.0.0.1:8787`.
 
 ---
 

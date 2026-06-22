@@ -1,7 +1,7 @@
 ---
 author: kb-bot
 created: 2026-04-13
-modified: 2026-04-13
+modified: 2026-06-17
 type: index
 ---
 
@@ -9,7 +9,7 @@ type: index
 
 This file is the top-level navigation map for the KB. It is kept current as topics and projects are added. Agents: read this first, then read the `_summary.md` of whichever topic seems relevant.
 
-For structural conventions and rules, see [[_schema.md]] and [[_rules.md]].
+For structural conventions and rules, see [[knowledgebase/_schema]] and [[knowledgebase/_rules]].
 
 ---
 
@@ -17,22 +17,26 @@ For structural conventions and rules, see [[_schema.md]] and [[_rules.md]].
 
 | Topic | Summary | Notes | Sources | Last updated |
 |---|---|---|---|---|
-| [[topics/obsidian\|obsidian]] | [[topics/obsidian/_summary]] | 7 | 6 | 2026-04-10 |
+| [[knowledgebase/topics/obsidian|obsidian]] | [[knowledgebase/topics/obsidian/_summary]] | 7 | 6 | 2026-04-10 |
 
 ---
 
 ## Projects
 
-| Project | Summary | Last updated |
-|---|---|---|
+The starter includes optional project scaffolds for workflow tools shipped in this repository. They are not active user projects until the installer configures and runs them locally.
+
+| Project | Summary | Status | Last updated |
+|---|---|---|---|
+| [[knowledgebase/projects/kb-feed|kb-feed]] | [[knowledgebase/projects/kb-feed/_summary]] | optional scaffold | 2026-06-16 |
+| [[knowledgebase/projects/kb-workflow-dashboard|kb-workflow-dashboard]] | [[knowledgebase/projects/kb-workflow-dashboard/_summary]] | optional scaffold | 2026-06-17 |
 
 ---
 
 ## KB Statistics
 
 - Topics: 1
-- Projects: 0
-- Total notes: 7
+- Projects: 2 optional scaffolds
+- Total notes: 8
 - Total sources ingested: 6
 - Last ingestion: 2026-04-10
 

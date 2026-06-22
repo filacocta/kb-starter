@@ -7,9 +7,11 @@ CLAUDE_DIR="$HOME/.claude"
 
 echo "Installing KB skills to $CLAUDE_DIR/skills/"
 
-for skill in kb-ask kb-ingest kb-queue kb-synthesise kb-lint kb-auto kb-scan kb-wrap kb-project-init; do
+for skill_dir in "$SKILLS_DIR"/kb-*; do
+  [[ -d "$skill_dir" ]] || continue
+  skill="$(basename "$skill_dir")"
   mkdir -p "$CLAUDE_DIR/skills/$skill"
-  cp "$SKILLS_DIR/$skill/SKILL.md" "$CLAUDE_DIR/skills/$skill/SKILL.md"
+  cp -R "$skill_dir"/. "$CLAUDE_DIR/skills/$skill/"
   echo "  ✓ $skill"
 done
 
@@ -38,4 +40,4 @@ echo ""
 echo "Done. Next steps:"
 echo "  1. Edit $CONFIG_FILE with your actual KB_ROOT and VAULT_NAME"
 echo "  2. Copy knowledgebase/ into your Obsidian vault root"
-echo "  3. Run /kb-ask in Claude Code to verify"
+echo "  3. Run /kb-ask in agent CLI to verify"

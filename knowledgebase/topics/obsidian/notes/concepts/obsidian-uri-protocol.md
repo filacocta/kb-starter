@@ -8,8 +8,8 @@ title: "The Obsidian URI Protocol"
 description: "The `obsidian://` URI scheme is a custom protocol handler that allows external applications, scripts, and documents to trigger actions inside Obsidian — opening notes, creating con"
 status: draft
 tags: ["obsidian", "uri", "automation", "deep-links", "integration"]
-sources: ["[[sources/2026-04-10-obsidian-uri]]"]
-related: ["[[notes/concepts/obsidian-overview]]", "[[notes/concepts/obsidian-internal-links]]", "[[notes/concepts/obsidian-cli]]"]
+sources: ["[[knowledgebase/topics/obsidian/sources/2026-04-10-obsidian-uri]]"]
+related: ["[[knowledgebase/topics/obsidian/notes/concepts/obsidian-overview]]", "[[knowledgebase/topics/obsidian/notes/concepts/obsidian-internal-links]]", "[[knowledgebase/topics/obsidian/notes/concepts/obsidian-cli]]"]
 ---
 
 # The Obsidian URI Protocol
@@ -109,6 +109,6 @@ obsidian://open?vault=journal&file=knowledgebase%2Ftopics%2Fobsidian%2Fnotes%2Fc
 
 ## See Also
 
-- [[notes/concepts/obsidian-cli]] — the CLI provides complementary automation at the command-line level
-- [[notes/concepts/obsidian-internal-links]] — internal wikilinks; the URI protocol is for *external* deep-linking
-- [[notes/concepts/obsidian-overview]] — Obsidian's overall architecture
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-cli]] — the CLI provides complementary automation at the command-line level
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-internal-links]] — internal wikilinks; the URI protocol is for *external* deep-linking
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-overview]] — Obsidian's overall architecture

@@ -1,0 +1,11 @@
+[Unit]
+Description=kb-feed daily LLM triage of inspiration-capture notes
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Vault/projects/kb-feed
+EnvironmentFile=%h/.config/kb-feed/credentials.env
+ExecStart=%h/Vault/projects/kb-feed/.venv/bin/kb-feed triage inspiration --state-db %h/.local/state/kb-feed/state.sqlite --kb-root %h/Vault/knowledgebase
+SuccessExitStatus=2

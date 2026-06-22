@@ -26,7 +26,7 @@ Sources queued for ingestion. Process with `/kb-queue obsidian`.
 ## Failed — Retry
 
 - [!] https://obsidian.md/help/cli — JS-rendered; could not fetch. Retry with a local copy or screenshot-to-text, or find a mirror.
-- [!] https://obsidian.md/help/Plugins/Dataview — path not found on publish server. Try: https://blacksmithgu.github.io/obsidian-dataview/
+- [!] https://obsidian.md/help/Plugins/Dataview — path not found on publish server. Official Dataview documentation is queued below.
 
 ---
 

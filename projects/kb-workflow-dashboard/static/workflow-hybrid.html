@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>KB Workflow Map — Hybrid</title>
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/workflow.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand-block">
+        <div class="brand-line">
+          <h1>Workflow Map</h1>
+          <span class="mode-chip">Hybrid · prototype</span>
+        </div>
+        <p id="subhead">Global stages on top; click a stage to drill into per-topic detail.</p>
+      </div>
+      <nav class="top-actions" aria-label="Page actions">
+        <a class="top-link top-action" href="/index.html" aria-label="Back to dashboard">Dashboard</a>
+        <a class="top-link top-action" href="/workflow-global.html" aria-label="Open global map">Global map</a>
+        <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch color theme">Dark</button>
+        <button class="top-action" id="refresh" type="button" title="Refresh" aria-label="Refresh">Refresh</button>
+      </nav>
+    </header>
+
+    <main>
+      <div class="wf-banner">
+        <strong>Live:</strong>
+        <span>Per-topic promote actions run <code>_tools/kb-promote.py</code> under the KB write lock via a loopback-only endpoint, with a preview + confirm step and an audit log. Copy-command is still offered as a manual alternative.</span>
+      </div>
+
+      <div class="wf-summary" id="wf-summary" aria-label="What needs attention now"></div>
+
+      <div class="wf-legend">
+        <span><span class="wf-dot"></span> stage (click to drill in)</span>
+        <span><span class="wf-dot attn"></span> has actionable backlog</span>
+        <span>per-topic <b>›</b> = promote edge</span>
+      </div>
+
+      <section class="band" aria-label="Pipeline stages">
+        <div class="wf-flow" id="stages"><p class="muted">Loading…</p></div>
+      </section>
+
+      <section class="wf-drill" id="drill" aria-live="polite"></section>
+
+      <aside class="drawer hidden" id="detail-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" aria-hidden="true" tabindex="-1">
+        <div class="drawer-head">
+          <div>
+            <h2 id="drawer-title">Details</h2>
+            <p class="hint" id="drawer-subtitle"></p>
+          </div>
+          <button id="drawer-close" type="button" title="Close details">Close</button>
+        </div>
+        <div id="drawer-content" class="drawer-content"></div>
+      </aside>
+    </main>
+
+    <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+    <script src="/workflow-common.js"></script>
+    <script src="/workflow-hybrid.js"></script>
+  </body>
+</html>
