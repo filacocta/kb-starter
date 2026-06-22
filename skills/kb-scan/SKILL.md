@@ -8,7 +8,7 @@ You are performing a focused KB scan to orient yourself before starting work.
 
 ## Configuration
 
-Read `~/.claude/kb-config.md` to get KB_ROOT.
+At startup, read `~/.claude/kb-config.md` to get `KB_ROOT` (the KB root path) and `VAULT_NAME`. If that file does not exist, stop and tell the user to create it — see the kb-starter README.
 
 **Task / topic:** $ARGUMENTS
 

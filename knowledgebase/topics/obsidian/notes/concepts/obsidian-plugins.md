@@ -8,8 +8,8 @@ title: "Obsidian Plugin Ecosystem"
 description: "Obsidian's extensibility is one of its most significant practical advantages."
 status: draft
 tags: ["obsidian", "plugins", "community-plugins", "core-plugins", "extensions"]
-sources: ["[[sources/2026-04-10-obsidian-help-overview]]", "[[sources/2026-04-10-phd20-dungeon-map-obsidian]]"]
-related: ["[[notes/concepts/obsidian-overview]]", "[[notes/concepts/obsidian-dataview]]", "[[notes/concepts/obsidian-cli]]"]
+sources: ["[[knowledgebase/topics/obsidian/sources/2026-04-10-obsidian-help-overview]]", "[[knowledgebase/topics/obsidian/sources/2026-04-10-phd20-dungeon-map-obsidian]]"]
+related: ["[[knowledgebase/topics/obsidian/notes/concepts/obsidian-overview]]", "[[knowledgebase/topics/obsidian/notes/concepts/obsidian-dataview]]", "[[knowledgebase/topics/obsidian/notes/concepts/obsidian-cli]]"]
 ---
 
 # Obsidian Plugin Ecosystem
@@ -37,7 +37,7 @@ Core plugins ship with Obsidian and are disabled by default — enable in Settin
 
 These are the community plugins most relevant to building and maintaining this knowledge base:
 
-**[Dataview](https://obsidian.md/plugins/dataview)** — treats the vault as a queryable database. Essential for live indexes, tag filtering, and status dashboards. See [[notes/concepts/obsidian-dataview]].
+**[Dataview](https://obsidian.md/plugins/dataview)** — treats the vault as a queryable database. Essential for live indexes, tag filtering, and status dashboards. See [[knowledgebase/topics/obsidian/notes/concepts/obsidian-dataview]].
 
 **[Obsidian Git](https://obsidian.md/plugins/obsidian-git)** — auto-commits vault changes to git on a schedule and pushes to a remote. Safety net for AI-managed vaults; also enables version history and distribution via git.
 
@@ -45,7 +45,7 @@ These are the community plugins most relevant to building and maintaining this k
 
 **[Linter](https://obsidian.md/plugins/obsidian-linter)** — enforces consistent YAML frontmatter and heading formatting. Can auto-fix frontmatter on save — useful for keeping AI-written notes compliant with schema.
 
-**[Leaflet](https://obsidian.md/plugins/obsidian-leaflet-plugin)** — renders interactive maps from image files inside notes. Markers can be linked to notes, images, or specific PDF pages. See the [[notes/syntheses/using-obsidian-strategies|dungeon map prep strategy]] for a concrete use case.
+**[Leaflet](https://obsidian.md/plugins/obsidian-leaflet-plugin)** — renders interactive maps from image files inside notes. Markers can be linked to notes, images, or specific PDF pages. See the [[knowledgebase/topics/obsidian/notes/syntheses/using-obsidian-strategies|dungeon map prep strategy]] for a concrete use case.
 
 **[Local Images Plus](https://obsidian.md/plugins/obsidian-local-images-plus)** — downloads images referenced in notes to local storage. Prevents broken image links when offline or when external URLs change.
 
@@ -69,6 +69,6 @@ The `kb-bot` plugin lives at `.obsidian/plugins/kb-bot/` in this vault. It provi
 
 ## See Also
 
-- [[notes/concepts/obsidian-dataview]] — the most important plugin for this KB
-- [[notes/concepts/obsidian-overview]] — Obsidian architecture
-- [[notes/syntheses/using-obsidian-strategies]] — use cases that specific plugins enable
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-dataview]] — the most important plugin for this KB
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-overview]] — Obsidian architecture
+- [[knowledgebase/topics/obsidian/notes/syntheses/using-obsidian-strategies]] — use cases that specific plugins enable

@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Getting Started - Workflow View</title>
+<style>
+  :root{
+    --bg:#f5f6f3; --ink:#1f2528; --muted:#667075; --panel:#ffffff; --line:#d9ded9;
+    --accent:#1d6f66; --accent-soft:#e7f3f0; --bad:#a23b3b; --warn:#9b6a16; --ok:#28724b;
+    --dark:#182124; --code:#f7fbfa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:1040px;margin:0 auto;padding:28px 22px 80px}
+  header.hero{background:var(--dark);color:#f7f8f5;border-radius:10px;padding:26px 28px;margin-bottom:26px}
+  header.hero h1{margin:0 0 6px;font-size:26px;letter-spacing:.2px}
+  header.hero p{margin:0;color:#c7d0cf;max-width:70ch}
+  .tag{display:inline-block;font-size:11px;letter-spacing:.5px;text-transform:uppercase;
+    background:var(--accent);color:#fff;padding:3px 9px;border-radius:999px;margin-bottom:12px}
+  h2{font-size:19px;margin:34px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--accent-soft)}
+  h3{font-size:15px;margin:18px 0 6px}
+  p{margin:0 0 12px;max-width:74ch}
+  code{background:var(--code);color:#133936;padding:1px 6px;border-radius:5px;font-size:13px;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace}
+  .lead{color:var(--muted)}
+  .grid{display:grid;gap:14px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px 18px}
+  /* flowchart */
+  .flow{display:flex;flex-direction:column;gap:0;align-items:stretch}
+  .stage{display:flex;gap:14px;align-items:stretch;flex-wrap:wrap}
+  .node{flex:1 1 0;min-width:150px;background:var(--panel);border:1px solid var(--line);
+    border-left:4px solid var(--accent);border-radius:8px;padding:12px 14px}
+  .node .k{font-weight:600}
+  .node .s{display:block;color:var(--accent);font-size:12.5px;font-family:monospace;margin-top:3px}
+  .node small{color:var(--muted);display:block;margin-top:5px;font-size:12.5px}
+  .arrow{align-self:center;color:var(--accent);font-size:22px;line-height:1;text-align:center;padding:7px 0}
+  .arrow.down{width:100%}
+  .swim{margin:6px 0 2px;font-size:12px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted)}
+  /* skills table */
+  table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);
+    border-radius:8px;overflow:hidden;font-size:13.5px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#eef2ef;font-size:12px;letter-spacing:.4px;text-transform:uppercase;color:#263033}
+  tr:last-child td{border-bottom:0}
+  td code{white-space:nowrap}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:720px){.cols{grid-template-columns:1fr}}
+  ul{margin:0 0 12px;padding-left:20px}
+  li{margin:3px 0}
+  .pill{display:inline-block;font-size:11px;background:var(--accent-soft);color:#133936;
+    padding:2px 8px;border-radius:999px;margin:0 4px 4px 0}
+  .note{background:#fff5df;border:1px solid #efe2bf;color:#5c4a17;border-radius:8px;padding:12px 14px;margin:12px 0}
+  footer{margin-top:40px;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}
+  .tree{font-family:monospace;font-size:12.5px;line-height:1.5;color:#2a3338;background:var(--code);
+    border:1px solid var(--line);border-radius:8px;padding:14px 16px;white-space:pre;overflow:auto}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <span class="tag">Getting Started - Workflow View</span>
+    <h1>The Knowledge Base, end to end</h1>
+    <p>A personal, LLM-agnostic research vault: you <strong>capture</strong> sources once, an agent <strong>ingests</strong> them into structured source notes, then <strong>synthesises</strong> them into a browsable wiki. Everything is plain Markdown in an Obsidian vault — the agents and scripts are just disciplined hands on top of it.</p>
+  </header>
+
+  <p class="lead">This page explains the big picture: how knowledge flows in, the nine skills that move it, the scripts underneath, and the rules that keep it trustworthy. Toggle the tab above to compare with the system-oriented write-up.</p>
+
+  <h2>1 · The mental model</h2>
+  <div class="cols">
+    <div class="panel">
+      <h3>Capture-once, synthesise-later</h3>
+      <p>The cost of losing a good source is high; the cost of an unprocessed link is low. So the front door is friction-free — drop a URL anywhere — and the heavy thinking (reading, connecting, writing) happens later, in batches, by an agent.</p>
+    </div>
+    <div class="panel">
+      <h3>Sources → Wiki</h3>
+      <p>Raw material lands as <strong>source notes</strong> (one per URL/PDF). Once a topic has enough of them, <strong>synthesis</strong> distills recurring concepts and entities into wiki-style articles that link back to their sources. You read the wiki; the sources are the evidence.</p>
+    </div>
+  </div>
+  <div class="note"><strong>Authorship guard (non-negotiable):</strong> agents only ever touch files inside <code>knowledgebase/</code> that carry <code>author: kb-bot</code> frontmatter. Nothing else is created or modified. This is what makes the vault safe to let an agent loose in.</div>
+
+  <h2>2 · The workflow</h2>
+  <p class="lead">Knowledge moves left-to-right through five phases. Each box names the skill (slash command) that drives it.</p>
+
+  <div class="flow panel" style="border-left:1px solid var(--line)">
+    <div class="swim">Capture &nbsp;→&nbsp; the friction-free front door</div>
+    <div class="stage">
+      <div class="node"><span class="k">Telegram bot</span><small>DM a link to the bot; it routes to the right topic thread.</small></div>
+      <div class="arrow">→</div>
+      <div class="node"><span class="k">kb-feed pipeline</span><small>Daemon appends the URL to that topic's <code>reading-list.md</code> under <em>Pending</em>.</small></div>
+      <div class="arrow">→</div>
+      <div class="node"><span class="k">reading-list.md</span><small>Per-topic queue on the canonical ladder: <code>## Pending → ## Approved → ## Auto-approved → ## Processed → ## Failed — Retry</code> (lint-enforced). Promotion is upward and explicit.</small></div>
+    </div>
+
+    <div class="arrow down">↓</div>
+
+    <div class="swim">Ingest &nbsp;→&nbsp; URL/PDF becomes a structured source note</div>
+    <div class="stage">
+      <div class="node"><span class="k">Interactive</span><span class="s">/kb-ingest</span><small>One source, as a discussion — explore, connect, then commit.</small></div>
+      <div class="arrow">·</div>
+      <div class="node"><span class="k">Batch</span><span class="s">/kb-queue</span><small>Work a topic's whole backlog with an approval checklist.</small></div>
+      <div class="arrow">·</div>
+      <div class="node"><span class="k">Unattended</span><span class="s">/kb-auto</span><small>Headless overnight run (cron) over auto-approved items.</small></div>
+    </div>
+
+    <div class="arrow down">↓</div>
+
+    <div class="swim">Synthesise &nbsp;→&nbsp; sources become a wiki</div>
+    <div class="stage">
+      <div class="node" style="flex-basis:100%"><span class="k">/kb-synthesise</span><small>Reads all source notes for a topic, inventories concepts &amp; entities, then writes concept/entity/synthesis notes (stub at 1 source, full article at 2+) and refreshes the topic <code>_summary.md</code>.</small></div>
+    </div>
+
+    <div class="arrow down">↓</div>
+
+    <div class="swim">Maintain &amp; Use</div>
+    <div class="stage">
+      <div class="node"><span class="k">Health check</span><span class="s">/kb-lint</span><small>Broken links, orphans, stale sources, ⚠️ contradictions, media integrity.</small></div>
+      <div class="arrow">·</div>
+      <div class="node"><span class="k">Query / browse</span><span class="s">/kb-ask</span><small>Conversation over the KB, with <code>obsidian://</code> citations.</small></div>
+    </div>
+
+    <div class="arrow down">↓</div>
+
+    <div class="swim">Project loop &nbsp;→&nbsp; keep project knowledge current</div>
+    <div class="stage">
+      <div class="node"><span class="k">Start of work</span><span class="s">/kb-scan</span><small>Load relevant topic/project summaries before a task.</small></div>
+      <div class="arrow">→</div>
+      <div class="node"><span class="k">New project</span><span class="s">/kb-project-init</span><small>Create <code>projects/&lt;slug&gt;/_summary.md</code>.</small></div>
+      <div class="arrow">→</div>
+      <div class="node"><span class="k">Stopping point</span><span class="s">/kb-wrap</span><small>Update the project summary + append to <code>_log.md</code>.</small></div>
+    </div>
+  </div>
+
+  <h2>3 · The nine skills</h2>
+  <p class="lead">Skills are invoked as slash commands (e.g. <code>/kb-ingest &lt;url&gt;</code>). Agent-specific config sets <code>KB_ROOT</code> and <code>VAULT_NAME</code>; the durable contract is the KB's <code>_schema.md</code>, <code>_rules.md</code>, and shared <code>_tools/</code>.</p>
+  <table>
+    <tr><th>Skill</th><th>What it does</th><th>Reach for it when…</th></tr>
+    <tr><td><code>/kb-ask</code></td><td>Scoped Q&amp;A / browse session over KB content; navigates by topic summary, cites with <code>obsidian://</code> links.</td><td>you want to query or explore what's already captured.</td></tr>
+    <tr><td><code>/kb-ingest</code></td><td>Ingest <em>one</em> URL/PDF interactively — fetch, discuss, surface connections, then commit a source note.</td><td>a single source deserves real attention.</td></tr>
+    <tr><td><code>/kb-queue</code></td><td>Batch-process a topic's reading list: approval checklist → ingest approved items one-by-one with checkpointing.</td><td>you have a backlog to clear.</td></tr>
+    <tr><td><code>/kb-auto</code></td><td>Headless autonomous ingestion of <em>auto-approved</em> reading-list items; checkpoints, stops cleanly at context limits.</td><td>running unattended via cron/systemd.</td></tr>
+    <tr><td><code>/kb-synthesise</code></td><td>Turn a topic's source notes into concept/entity/wiki articles; applies the 1→stub / 2+→article threshold.</td><td>after queuing, to build the browsable layer.</td></tr>
+    <tr><td><code>/kb-lint</code></td><td>Topic (or whole-KB) health check → report in <code>notes/syntheses/</code>, with safe fixes.</td><td>after synthesis, to catch gaps &amp; breakage.</td></tr>
+    <tr><td><code>/kb-scan</code></td><td>Light load of <code>_index.md</code> + relevant <code>_summary.md</code> files — prior decisions, constraints, open questions.</td><td>at the <em>start</em> of work on a topic/project.</td></tr>
+    <tr><td><code>/kb-wrap</code></td><td>Update the project <code>_summary.md</code> (status, decisions, questions) + append a <code>_log.md</code> entry.</td><td>at a natural <em>stopping</em> point.</td></tr>
+    <tr><td><code>/kb-project-init</code></td><td>Scaffold a new <code>projects/&lt;slug&gt;/_summary.md</code> from a codebase / notes / description.</td><td>starting work on a project with no KB entry.</td></tr>
+  </table>
+
+  <h2>4 · The scripts underneath (<code>_tools/</code>)</h2>
+  <p class="lead">Skills don't reinvent fetching/parsing in prose — they call real, tested scripts. The important ones:</p>
+  <div class="cols">
+    <div class="panel">
+      <ul>
+        <li><code>kb-prep-item.py</code> — one-call pre-fetch prep: dedup check, mirror rewrite, media discovery.</li>
+        <li><code>kb-tweet-fetch.py</code> — full tweet text + quote + thread + X-Articles (via fxtwitter).</li>
+        <li><code>kb-video-analyze.py</code> — transcript + slide-OCR + figure vision for video sources.</li>
+        <li><code>kb-media-capture.py</code> / <code>kb-headless-capture.py</code> — figure/image capture (incl. headless Chromium).</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <ul>
+        <li><code>kb-checkoff.py</code> — mark a reading-list item in place (the "mark" verb; shared write path).</li>
+        <li><code>kb-promote.py</code> — move a queue line between ladder sections, e.g. Pending→Approved→Auto-approved (the "move" verb).</li>
+        <li><code>kb-capture-url.py</code> — add a new URL to a topic's <code>## Pending</code> or the global inbox (the "add" verb).</li>
+        <li><code>kb-seen.py</code> — dedup against already-ingested URLs.</li>
+        <li><code>kb-lint.py</code> — the lint engine behind <code>/kb-lint</code>.</li>
+        <li><code>kb-derive-dive-queue.py</code> — regenerate the research dive queue.</li>
+        <li><code>kb-obsidian-cli.py</code> — emit <code>obsidian://</code> citation links.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>5 · How the vault is laid out</h2>
+  <div class="tree">knowledgebase/
+├── _index.md            ← map of topics & projects (kb-scan reads this)
+├── _log.md              ← running activity log (kb-wrap appends)
+├── _schema.md           ← note types + frontmatter spec
+├── _rules.md            ← ~30 operating rules (incl. authorship guard)
+├── _checkpoint.md       ← resume state for batch/auto runs
+├── _dive-queue.md       ← generated/read-only research view
+├── _media/  _templates/
+├── topics/
+│   └── &lt;topic&gt;/
+│       ├── reading-list.md       ← capture queue (Telegram appends here)
+│       ├── _summary.md           ← the topic's current picture
+│       ├── sources/              ← one note per ingested URL/PDF
+│       └── notes/syntheses/      ← wiki articles + lint reports
+└── projects/
+    └── &lt;slug&gt;/_summary.md        ← project status, decisions, open questions</div>
+
+  <h2>6 · Schema &amp; the rules that keep it honest</h2>
+  <div class="cols">
+    <div class="panel">
+      <h3>Note types</h3>
+      <span class="pill">source</span><span class="pill">concept / entity</span><span class="pill">synthesis</span><span class="pill">meta</span><span class="pill">project</span>
+      <p style="margin-top:10px">Every note carries frontmatter: <code>author: kb-bot</code>, <code>type</code>, <code>topic</code>, <code>title</code>, <code>status</code>, <code>tags</code>, <code>related</code>, and (for sources) <code>origin</code>/<code>mirror</code>/<code>ingest_status</code>.</p>
+    </div>
+    <div class="panel">
+      <h3>Load-bearing rules</h3>
+      <ul>
+        <li><strong>Authorship guard</strong> — only operate on <code>author: kb-bot</code> files; never write outside <code>knowledgebase/</code>.</li>
+        <li><strong>Rule 18</strong> — never blind-ingest an error / rate-limit response; mark for retry instead.</li>
+        <li><strong>Rule 29</strong> — capture only contextually-relevant media; keep media links intact.</li>
+        <li><strong>Rule 30</strong> — transport rewrites (e.g. <code>x.com → fxtwitter</code>) record canonical as <code>origin</code>, mirror as <code>mirror</code>.</li>
+        <li><strong>Gated-source ladder</strong> — on 403/429/JS-shell, try an un-gated API/docs host, then a headed browser, before giving up.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>7 · Where this dashboard fits</h2>
+  <p>The <strong>KB Workflow Dashboard</strong> (this app) is a read-only window onto the live vault: it shows the active checkpoint, the global URL inbox, per-topic reading-list queue counts, the dive queue, kb-feed state, and recent <code>_log.md</code> entries — so you can see <em>what's waiting</em> without opening Obsidian. Future write actions should go through named shared-tool commands, confirmations, and logs; the browser should not edit Markdown directly.</p>
+
+  <h2>8 · Source clusters can become skills, but only after synthesis</h2>
+  <p>A book, article, or Gist does not automatically become a skill. Keep long-form raw files in a cataloged custody path outside topic folders, then ingest only the sections that matter to each topic. First synthesize the repeatable procedures, critique lenses, decision rules, examples, and failure modes. Existing skill artifacts should be reviewed in scratch: keep the original checkout intact, normalize package layout, validate the skill shape, and compare it against the KB synthesis. Promote to a skill only when the material improves a task an agent can actually perform, and test the package before installing it. If a skill references support files such as <code>references/tufte-principles.md</code>, the installed package must preserve that layout.</p>
+
+  <footer>
+    Independent workflow view. Content reflects the KB skills, <code>_schema.md</code>/<code>_rules.md</code>, and tooling as of June 2026.
+  </footer>
+
+</div>
+</body>
+</html>

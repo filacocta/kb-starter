@@ -1,0 +1,10 @@
+[Unit]
+Description=Run kb-feed link triage when the bot has been inactive
+
+[Timer]
+OnBootSec=30min
+OnUnitActiveSec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

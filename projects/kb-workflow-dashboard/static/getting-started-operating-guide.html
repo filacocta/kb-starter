@@ -1,0 +1,1014 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Getting Started - Workflow Map</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f4f5f2;
+    --surface: #ffffff;
+    --surface-2: #ebece8;
+    --surface-3: #dfe4e6;
+    --ink: #20231f;
+    --muted: #606961;
+    --line: #cfd5cf;
+    --line-strong: #9fa9a1;
+    --top: #171b18;
+    --top-ink: #f6f7f4;
+    --top-muted: #bec7bf;
+    --accent: #1e7568;
+    --accent-ink: #ffffff;
+    --blue: #315f8c;
+    --blue-soft: #e1e9f1;
+    --warn: #986118;
+    --warn-soft: #f1e4d0;
+    --bad: #984846;
+    --bad-soft: #f0dddd;
+    --ok: #31704c;
+    --ok-soft: #dcebe2;
+    --focus: rgba(30, 117, 104, 0.34);
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #101310;
+    --surface: #191e1a;
+    --surface-2: #202620;
+    --surface-3: #26302f;
+    --ink: #f0f3ee;
+    --muted: #a9b2a9;
+    --line: #343d35;
+    --line-strong: #586459;
+    --top: #0c100d;
+    --top-ink: #f7faf4;
+    --top-muted: #aab5aa;
+    --accent: #68c4b5;
+    --accent-ink: #061511;
+    --blue: #8fb2d8;
+    --blue-soft: #1f3041;
+    --warn: #e0a958;
+    --warn-soft: #3a2a16;
+    --bad: #e18884;
+    --bad-soft: #3c2221;
+    --ok: #82c99e;
+    --ok-soft: #1d3827;
+    --focus: rgba(104, 196, 181, 0.34);
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    overflow-x: hidden;
+  }
+
+  body {
+    margin: 0;
+    overflow-x: hidden;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  h1,
+  h2,
+  h3,
+  p {
+    margin: 0;
+  }
+
+  h1 {
+    max-width: 920px;
+    font-size: clamp(28px, 4vw, 44px);
+    line-height: 1.05;
+    letter-spacing: 0;
+  }
+
+  h2 {
+    font-size: 20px;
+    letter-spacing: 0;
+  }
+
+  h3 {
+    font-size: 15px;
+    letter-spacing: 0;
+  }
+
+  button {
+    font: inherit;
+  }
+
+  button:focus-visible,
+  a:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  code {
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1px 5px;
+    background: var(--surface-2);
+    color: var(--ink);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.92em;
+  }
+
+  .hero {
+    background: var(--top);
+    color: var(--top-ink);
+    border-bottom: 1px solid color-mix(in srgb, var(--accent) 76%, var(--line));
+  }
+
+  .hero-inner,
+  main {
+    width: min(1240px, 100%);
+    margin: 0 auto;
+  }
+
+  .hero-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 26px;
+    align-items: end;
+    padding: 28px 20px 22px;
+  }
+
+  .eyebrow {
+    margin-bottom: 8px;
+    color: var(--top-muted);
+    font-size: 12px;
+    font-weight: 780;
+    text-transform: uppercase;
+  }
+
+  .lede {
+    max-width: 860px;
+    margin-top: 12px;
+    color: var(--top-muted);
+    font-size: 16px;
+  }
+
+  .start-now {
+    display: grid;
+    gap: 10px;
+    border: 1px solid color-mix(in srgb, var(--top-muted) 42%, transparent);
+    border-radius: 4px;
+    padding: 12px;
+    background: color-mix(in srgb, var(--top-ink) 6%, transparent);
+  }
+
+  .start-now strong {
+    color: var(--top-ink);
+  }
+
+  .start-now span {
+    color: var(--top-muted);
+    font-size: 13px;
+  }
+
+  main {
+    padding: 16px;
+  }
+
+  .band {
+    margin-top: 16px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+  }
+
+  .band:first-child {
+    margin-top: 0;
+  }
+
+  .section-title {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: end;
+    border-bottom: 1px solid var(--line);
+    padding: 14px 16px;
+  }
+
+  .section-title p,
+  .muted {
+    color: var(--muted);
+  }
+
+  .section-title p {
+    max-width: 680px;
+  }
+
+  .workflow-map {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    min-height: 420px;
+  }
+
+  .stage-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    border-right: 1px solid var(--line);
+  }
+
+  .stage {
+    position: relative;
+    display: grid;
+    gap: 8px;
+    min-height: 150px;
+    border: 0;
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    background: var(--surface);
+    color: var(--ink);
+    padding: 14px;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .stage:nth-child(4n) {
+    border-right: 0;
+  }
+
+  .stage:hover,
+  .stage:focus-visible {
+    background: var(--surface-2);
+  }
+
+  .stage.active {
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+    box-shadow: inset 0 -3px 0 var(--accent);
+  }
+
+  .stage strong {
+    font-size: 15px;
+  }
+
+  .stage small,
+  .stage span {
+    color: var(--muted);
+  }
+
+  .stage small {
+    display: inline-flex;
+    width: fit-content;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 2px 6px;
+    background: var(--surface-2);
+    font-size: 11px;
+    font-weight: 760;
+    text-transform: uppercase;
+  }
+
+  .stage-panel {
+    display: grid;
+    align-content: start;
+    gap: 14px;
+    padding: 16px;
+    background: var(--surface-2);
+  }
+
+  .detail-block {
+    display: grid;
+    gap: 6px;
+  }
+
+  .detail-block ul {
+    display: grid;
+    gap: 7px;
+    margin: 0;
+    padding-left: 18px;
+    color: var(--muted);
+  }
+
+  .command {
+    display: grid;
+    gap: 6px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 10px;
+    background: var(--surface);
+  }
+
+  .command span {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 760;
+    text-transform: uppercase;
+  }
+
+  .decision-layout {
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr);
+    min-height: 300px;
+  }
+
+  .decision-list {
+    display: grid;
+    align-content: start;
+    border-right: 1px solid var(--line);
+  }
+
+  .decision {
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    background: var(--surface);
+    color: var(--ink);
+    padding: 12px 14px;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .decision:hover,
+  .decision:focus-visible {
+    background: var(--surface-2);
+  }
+
+  .decision.active {
+    background: color-mix(in srgb, var(--blue) 13%, var(--surface));
+    box-shadow: inset 3px 0 0 var(--blue);
+  }
+
+  .decision-output {
+    display: grid;
+    gap: 12px;
+    align-content: start;
+    padding: 16px;
+  }
+
+  .output-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .output-cell {
+    display: grid;
+    gap: 6px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 10px;
+    background: var(--surface-2);
+  }
+
+  .output-cell strong {
+    font-size: 12px;
+    text-transform: uppercase;
+  }
+
+  .output-cell span {
+    color: var(--muted);
+  }
+
+  .skill-lane {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(130px, 1fr));
+    border-top: 1px solid var(--line);
+  }
+
+  .skill-step {
+    display: grid;
+    gap: 7px;
+    min-height: 150px;
+    border-right: 1px solid var(--line);
+    padding: 12px;
+    background: var(--surface);
+  }
+
+  .skill-step:last-child {
+    border-right: 0;
+  }
+
+  .skill-step strong {
+    font-size: 14px;
+  }
+
+  .skill-step span {
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  .flag {
+    display: inline-flex;
+    width: fit-content;
+    border-radius: 4px;
+    padding: 2px 6px;
+    background: var(--blue-soft);
+    color: var(--blue);
+    font-size: 11px;
+    font-weight: 780;
+    text-transform: uppercase;
+  }
+
+  .flag.warn {
+    background: var(--warn-soft);
+    color: var(--warn);
+  }
+
+  .flag.bad {
+    background: var(--bad-soft);
+    color: var(--bad);
+  }
+
+  .flag.ok {
+    background: var(--ok-soft);
+    color: var(--ok);
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th,
+  td {
+    border-bottom: 1px solid var(--line);
+    padding: 10px 12px;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    color: var(--muted);
+    font-size: 12px;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+
+  tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .rule-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border-top: 1px solid var(--line);
+  }
+
+  .rule {
+    display: grid;
+    gap: 7px;
+    min-height: 138px;
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    padding: 14px;
+    background: var(--surface);
+  }
+
+  .rule:nth-child(3n) {
+    border-right: 0;
+  }
+
+  .rule p {
+    color: var(--muted);
+  }
+
+  @media (max-width: 1060px) {
+    .hero-inner,
+    .workflow-map,
+    .decision-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .stage-grid,
+    .decision-list {
+      border-right: 0;
+    }
+
+    .stage-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .stage:nth-child(2n) {
+      border-right: 0;
+    }
+
+    .stage:nth-child(4n) {
+      border-right: 0;
+    }
+
+    .skill-lane {
+      overflow-x: auto;
+    }
+
+    .skill-step {
+      min-width: 190px;
+    }
+
+    .output-grid,
+    .rule-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .rule,
+    .rule:nth-child(3n) {
+      border-right: 0;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .hero-inner {
+      padding: 22px 14px 16px;
+    }
+
+    main {
+      padding: 12px;
+    }
+
+    .section-title {
+      display: grid;
+      padding: 12px;
+    }
+
+    .stage-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .stage,
+    .stage:nth-child(2n),
+    .stage:nth-child(4n) {
+      min-height: 118px;
+      border-right: 0;
+    }
+
+    .decision-output,
+    .stage-panel {
+      padding: 12px;
+    }
+  }
+</style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <div>
+        <div class="eyebrow">Workflow map</div>
+        <h1>Start from the state you see, then run the smallest safe workflow.</h1>
+        <p class="lede">The dashboard is an attention console. It tells you what needs inspection, which KB path owns it, which shared tool or skill fits, and where the result should be recorded. The two Workflow Maps — <strong>Global</strong> (one pipeline across all topics) and <strong>Hybrid</strong> (per-topic drill-down) — render the ladder live and let you promote items up it with a guarded preview → confirm → execute action.</p>
+      </div>
+      <aside class="start-now" aria-label="Fast start">
+        <strong>Fast start</strong>
+        <span>1. Scan Needs Attention.</span>
+        <span>2. Open the queue or copy the path.</span>
+        <span>3. Pick the matching workflow below.</span>
+        <span>4. End with lint, log, and checkpoint state.</span>
+      </aside>
+    </div>
+  </header>
+
+  <main>
+    <section class="band" aria-labelledby="workflow-title">
+      <div class="section-title">
+        <div>
+          <h2 id="workflow-title">Pipeline Stages</h2>
+          <p>Select a stage to see its source of truth, allowed action, and done condition.</p>
+        </div>
+      </div>
+      <div class="workflow-map">
+        <div class="stage-grid" id="stage-grid" aria-label="KB workflow stages"></div>
+        <aside class="stage-panel" id="stage-panel" aria-live="polite"></aside>
+      </div>
+    </section>
+
+    <section class="band" aria-labelledby="decision-title">
+      <div class="section-title">
+        <div>
+          <h2 id="decision-title">What Am I Seeing?</h2>
+          <p>Use this as the bridge between a dashboard signal and the next command or handoff.</p>
+        </div>
+      </div>
+      <div class="decision-layout">
+        <div class="decision-list" id="decision-list" aria-label="Dashboard signal choices"></div>
+        <div class="decision-output" id="decision-output" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <section class="band" aria-labelledby="skill-title">
+      <div class="section-title">
+        <div>
+          <h2 id="skill-title">Book Or Source Cluster To Skill</h2>
+          <p>A skill is a tested workflow artifact. The KB remains the source of truth for custody, synthesis, fixtures, lifecycle, and install decisions.</p>
+        </div>
+      </div>
+      <div class="skill-lane" aria-label="Book-to-skill lane">
+        <div class="skill-step">
+          <span class="flag">custody</span>
+          <strong>Raw source exists</strong>
+          <span>Store books and long PDFs under <code>_library/</code>; keep raw files out of public repos.</span>
+        </div>
+        <div class="skill-step">
+          <span class="flag">topic</span>
+          <strong>Relevant excerpts</strong>
+          <span>Create topic source notes only for the sections actually used by that topic.</span>
+        </div>
+        <div class="skill-step">
+          <span class="flag">model</span>
+          <strong>Practice model</strong>
+          <span>Synthesize procedures, critique criteria, examples, failure modes, and boundaries.</span>
+        </div>
+        <div class="skill-step">
+          <span class="flag warn">gate</span>
+          <strong>Candidate note</strong>
+          <span>Record trigger, repeatability, scope, provenance, blockers, and next action.</span>
+        </div>
+        <div class="skill-step">
+          <span class="flag warn">eval</span>
+          <strong>Real fixtures</strong>
+          <span>Test trigger behavior and output quality against real artifacts before install.</span>
+        </div>
+        <div class="skill-step">
+          <span class="flag">package</span>
+          <strong>Skill package</strong>
+          <span>Draft <code>SKILL.md</code> plus references only after synthesis and fixtures exist.</span>
+        </div>
+        <div class="skill-step">
+          <span class="flag ok">decision</span>
+          <strong>Install or defer</strong>
+          <span>Install locally only after explicit approval. Starter-safe status is a separate decision.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" aria-labelledby="command-title">
+      <div class="section-title">
+        <div>
+          <h2 id="command-title">Command Choice</h2>
+          <p>Pick the smallest tool that matches the current state. Do not turn a read task into a write task.</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Need</th><th>Use</th><th>Writes?</th><th>Result</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Orient on a topic or project</td>
+              <td><code>/kb-scan</code></td>
+              <td>No</td>
+              <td>Reads index, summaries, and relevant state before action.</td>
+            </tr>
+            <tr>
+              <td>Process one approved source</td>
+              <td><code>/kb-ingest &lt;url|path&gt;</code></td>
+              <td>Yes</td>
+              <td>Creates one immutable source note and updates queue state.</td>
+            </tr>
+            <tr>
+              <td>Work through approved topic items</td>
+              <td><code>/kb-queue &lt;topic&gt;</code></td>
+              <td>Yes</td>
+              <td>Processes approved queue items with checkpoint support.</td>
+            </tr>
+            <tr>
+              <td>Run unattended approved ingestion</td>
+              <td><code>/kb-auto &lt;topic&gt;</code></td>
+              <td>Yes</td>
+              <td>Processes only URL-first or local-PDF lines under <code>## Auto-approved</code>.</td>
+            </tr>
+            <tr>
+              <td>Turn source notes into wiki notes</td>
+              <td><code>/kb-synthesise &lt;topic&gt;</code></td>
+              <td>Yes</td>
+              <td>Creates or updates concept, entity, and synthesis notes.</td>
+            </tr>
+            <tr>
+              <td>Evaluate a source cluster as a skill</td>
+              <td><code>$book-to-skill</code></td>
+              <td>Maybe</td>
+              <td>Records lifecycle state and drafts a package only if the gate passes.</td>
+            </tr>
+            <tr>
+              <td>Close implementation or research work</td>
+              <td><code>/kb-wrap</code></td>
+              <td>Yes</td>
+              <td>Records decisions, todos, summaries, log entries, and follow-ups.</td>
+            </tr>
+            <tr>
+              <td>Check structural health</td>
+              <td><code>_tools/kb-lint.py --all</code></td>
+              <td>No</td>
+              <td>Reports frontmatter, links, queues, media, and authorship findings.</td>
+            </tr>
+            <tr>
+              <td>Change queue checkbox state (mark)</td>
+              <td><code>_tools/kb-checkoff.py</code></td>
+              <td>Yes</td>
+              <td>Flips a line's checkbox in place (<code>[ ]→[x]/[!]</code>) under the shared write lock and regenerates derived views.</td>
+            </tr>
+            <tr>
+              <td>Promote an item up the ladder (move)</td>
+              <td><code>_tools/kb-promote.py</code></td>
+              <td>Yes</td>
+              <td>Moves a queue line between canonical sections (e.g. Pending → Approved → Auto-approved) under the write lock. The Workflow Maps run this live (preview → confirm → execute, audited to <code>command-log.jsonl</code>).</td>
+            </tr>
+            <tr>
+              <td>Enable/disable a kb-feed schedule</td>
+              <td>Schedules panel · <code>systemctl --user … --now &lt;timer&gt;</code></td>
+              <td>Yes</td>
+              <td>The kb-feed Schedules panel live-toggles the digest/reminder timers via a guarded, audited endpoint; the not-yet-installed nudge timer ships a copyable one-time install command.</td>
+            </tr>
+            <tr>
+              <td>Capture a URL with provenance</td>
+              <td><code>_tools/kb-capture-url.py &lt;url&gt;</code></td>
+              <td>Yes</td>
+              <td>Routes to a topic's <code>## Pending</code> (<code>--topic</code>) or <code>readinglist/Links.md</code>, tagged by source. Also fired automatically by the WebFetch capture hook.</td>
+            </tr>
+            <tr>
+              <td>Diagnose kb-feed health</td>
+              <td><code>kb-feed doctor</code></td>
+              <td>No</td>
+              <td>Reports thread→topic mappings, blind topics, dropped-message counters, queue backlog, and unapplied proposals.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="band" aria-labelledby="rules-title">
+      <div class="section-title">
+        <div>
+          <h2 id="rules-title">Non-Negotiables</h2>
+          <p>These rules prevent the dashboard from becoming a second, unsafe source of truth.</p>
+        </div>
+      </div>
+      <div class="rule-grid">
+        <article class="rule">
+          <span class="flag bad">authorship</span>
+          <h3>Only write kb-bot files</h3>
+          <p>Existing Markdown without <code>author: kb-bot</code> is user-owned. Do not edit it.</p>
+        </article>
+        <article class="rule">
+          <span class="flag warn">approval</span>
+          <h3>No blind fetching</h3>
+          <p>Interactive fetches need approval. Headless fetches must come from <code>## Auto-approved</code>.</p>
+        </article>
+        <article class="rule">
+          <span class="flag">queues</span>
+          <h3>Use shared tools</h3>
+          <p>Queue mutation belongs in the shared, lock-holding tools — <code>kb-checkoff.py</code> (mark) and <code>kb-promote.py</code> (move between sections) — never direct markdown edits. See <code>_tools/README.md</code>.</p>
+        </article>
+        <article class="rule">
+          <span class="flag">generated</span>
+          <h3>Generated views are read-only</h3>
+          <p><code>_dive-queue.md</code> summarizes other files (topic <code>## Auto-approved</code> + <code>research-ideas.md</code>). Write to those, never to the generated view.</p>
+        </article>
+        <article class="rule">
+          <span class="flag">ladder</span>
+          <h3>One section ladder</h3>
+          <p>Reading lists use only <code>## Pending → ## Approved → ## Auto-approved → ## Processed → ## Failed — Retry</code>. <code>kb-lint.py</code> rejects any other ingestion heading; sub-group with <code>###</code>.</p>
+        </article>
+        <article class="rule">
+          <span class="flag warn">checkpoint</span>
+          <h3>Long writes need a checkpoint</h3>
+          <p>Multi-file KB operations should be resumable before the first durable write happens.</p>
+        </article>
+        <article class="rule">
+          <span class="flag ok">skills</span>
+          <h3>Synthesis before skills</h3>
+          <p>Books and source clusters become skills only after a repeatable task, fixtures, and install decision exist.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      var themeKey = "kb-dashboard-theme";
+
+      var stages = [
+        {
+          key: "capture",
+          label: "Capture",
+          badge: "inbox",
+          summary: "A URL, PDF, note, or idea enters the system, with provenance.",
+          command: "readinglist/Links.md, topic reading-list.md (## Pending), kb-feed, _tools/kb-capture-url.py, clippings/",
+          action: "Record the item in the right lane, tagged by source. Telegram #unfiltered and agent web-fetches land in readinglist/Links.md (a WebFetch hook auto-captures fetched URLs); a known-topic capture goes straight to that topic's ## Pending. Do not fetch yet unless the item is already promoted to an approved lane.",
+          done: ["The item has a durable path.", "Provenance (Telegram vs agent vs manual) is tagged — the Capture Provenance panel shows the breakdown.", "Its topic or parking-lot status is clear."]
+        },
+        {
+          key: "triage",
+          label: "Triage",
+          badge: "route",
+          summary: "The item is routed to a topic and promoted up the section ladder.",
+          command: "_tools/kb-promote.py to move items between ladder sections; _tools/kb-checkoff.py for mark changes; kb-feed triage for Links.md routing",
+          action: "Promote up the canonical ladder — ## Pending (unvetted) → ## Approved (vetted, interactive ingest) → ## Auto-approved (the headless-safe subset). Moving an item between sections is kb-promote.py's job (kb-checkoff only flips the mark). The dashboard Workflow Maps (Global / Hybrid) run these promotions live via a guarded, audited endpoint: preview → confirm → execute. Use topic reading lists for exact source URLs, research-ideas.md for prose-only questions, and ideas/_backlog.md for broad project inspiration.",
+          done: ["The source has one owner.", "It sits in the correct ladder section.", "No duplicate unchecked line remains across sections."]
+        },
+        {
+          key: "ingest",
+          label: "Ingest",
+          badge: "source",
+          summary: "Approved material becomes an immutable source note.",
+          command: "/kb-ingest <url|path>, /kb-queue <topic>, or /kb-auto <topic>",
+          action: "Dedup, fetch or extract, preserve provenance, write one source note, and mark the source queue through the shared tool.",
+          done: ["A source note exists.", "Origin and citations are preserved.", "The queue item points to the source note."]
+        },
+        {
+          key: "synthesize",
+          label: "Synthesize",
+          badge: "wiki",
+          summary: "Source notes become human-readable KB knowledge.",
+          command: "/kb-synthesise <topic>",
+          action: "Create or update concepts, entities, and synthesis notes. Cite source notes and mark agent inference explicitly.",
+          done: ["The topic summary reflects the new shape.", "New notes link to sources.", "Lint is clean or findings are recorded."]
+        },
+        {
+          key: "skill",
+          label: "Skill Candidate",
+          badge: "gate",
+          summary: "A repeated practice may become a reusable agent skill.",
+          command: "$book-to-skill plus skill package validation",
+          action: "Build a practice model, record promotion-gate state, create fixtures, validate package shape, then ask for install approval.",
+          done: ["Lifecycle state is recorded.", "Fixtures exist.", "Install and starter-safe decisions are explicit."]
+        },
+        {
+          key: "project",
+          label: "Project Work",
+          badge: "build",
+          summary: "A KB finding turns into code, design, or operational work.",
+          command: "project _summary.md, project _todos.md, /kb-wrap",
+          action: "Load project context, make the implementation or design change, verify it, and update project todos and summary.",
+          done: ["Tests or checks ran.", "Todos reflect reality.", "The project summary names the current path forward."]
+        },
+        {
+          key: "maintain",
+          label: "Maintain",
+          badge: "health",
+          summary: "The KB remains navigable and resumable.",
+          command: "_tools/kb-lint.py --all, _checkpoint.md, _log.md",
+          action: "Resolve failed rows, close checkpoints, run lint when practical, and keep logs append-only.",
+          done: ["No active checkpoint is stale.", "Structural errors are fixed or noted.", "Recent operations are logged."]
+        },
+        {
+          key: "use",
+          label: "Use And Loop",
+          badge: "answer",
+          summary: "The KB answers a question or feeds the next work cycle.",
+          command: "/kb-ask, /kb-scan, /kb-wrap",
+          action: "Use summaries first, cite KB notes, and turn new questions into queues, research ideas, or project todos.",
+          done: ["The answer has citations.", "New follow-ups are captured.", "Important analysis is not left only in chat."]
+        }
+      ];
+
+      var decisions = [
+        {
+          key: "attention",
+          label: "Needs Attention has items",
+          next: "Open the card. If it is a queue item, inspect the drawer. If it is path-only, copy the path.",
+          command: "dashboard drawer, then matching workflow",
+          write: "No dashboard write yet",
+          record: "Only write after choosing the matching KB tool."
+        },
+        {
+          key: "failed",
+          label: "A queue has failed items",
+          next: "Inspect the source path, line number, and failure text. Decide whether the failure is retryable or permanent.",
+          command: "_tools/kb-checkoff.py for state changes",
+          write: "Yes, only through shared tool",
+          record: "Source note or queue line should preserve the failure reason."
+        },
+        {
+          key: "promote",
+          label: "An item should move up the ladder",
+          next: "Open a Workflow Map (Global or Hybrid), open the section's drawer, and use Promote ▸. It previews the exact move, asks you to confirm, then executes under the write lock. The map refreshes its counts after.",
+          command: "_tools/kb-promote.py (run live by the Workflow Maps)",
+          write: "Yes, guarded + audited",
+          record: "command-log.jsonl logs every executed move; the dive-queue regenerates."
+        },
+        {
+          key: "schedule",
+          label: "A kb-feed schedule is off (or nudge isn't installed)",
+          next: "Open the kb-feed Schedules panel. Toggle the digest/reminder timers live; for the not-yet-installed nudge timer, copy its one-time install command and run it once.",
+          command: "Schedules panel -> /api/timer/{enable,disable}; or systemctl --user",
+          write: "Yes, guarded + audited",
+          record: "command-log.jsonl logs each toggle."
+        },
+        {
+          key: "source-notes",
+          label: "A topic has enough source notes",
+          next: "Read the topic summary, inventory source notes, then write concept or synthesis notes.",
+          command: "/kb-synthesise <topic>",
+          write: "Yes, checkpoint first",
+          record: "Update topic summary, index if counts changed, log, and lint."
+        },
+        {
+          key: "book",
+          label: "A book or article cluster might become a skill",
+          next: "Check custody, source notes, practice model, candidate note, fixtures, package validation, and lifecycle state.",
+          command: "$book-to-skill",
+          write: "Maybe",
+          record: "Keep state in topic source catalog, candidate note, eval fixtures, project todos, and log."
+        },
+        {
+          key: "redesign",
+          label: "A dashboard or workflow UI needs redesign",
+          next: "Use app-interface review for task flow and data-visualization critique for evidence displays. Inspect the running UI before editing.",
+          command: "$app-interface-review plus $data-visualization-critique when data-dense",
+          write: "Code writes likely",
+          record: "Update project todos, summary, eval fixture notes, and verification results."
+        },
+        {
+          key: "done",
+          label: "Implementation or research is done",
+          next: "Close the loop: verification, checkpoint, summary, todos, and log should agree.",
+          command: "/kb-wrap",
+          write: "Yes",
+          record: "Record decisions, follow-ups, open blockers, and current lifecycle state."
+        }
+      ];
+
+      function escapeHtml(value) {
+        return String(value == null ? "" : value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function renderStages(activeKey) {
+        var grid = document.getElementById("stage-grid");
+        grid.innerHTML = stages.map(function (stage) {
+          var active = stage.key === activeKey ? " active" : "";
+          return '<button class="stage' + active + '" type="button" data-stage="' + escapeHtml(stage.key) + '" aria-pressed="' + (stage.key === activeKey ? "true" : "false") + '">' +
+            '<small>' + escapeHtml(stage.badge) + '</small>' +
+            '<strong>' + escapeHtml(stage.label) + '</strong>' +
+            '<span>' + escapeHtml(stage.summary) + '</span>' +
+          '</button>';
+        }).join("");
+        Array.prototype.forEach.call(grid.querySelectorAll(".stage"), function (button) {
+          button.addEventListener("click", function () {
+            renderStages(button.dataset.stage);
+          });
+        });
+        renderStagePanel(stages.find(function (stage) { return stage.key === activeKey; }) || stages[0]);
+      }
+
+      function renderStagePanel(stage) {
+        document.getElementById("stage-panel").innerHTML =
+          '<div class="detail-block">' +
+            '<span class="flag">' + escapeHtml(stage.badge) + '</span>' +
+            '<h3>' + escapeHtml(stage.label) + '</h3>' +
+            '<p class="muted">' + escapeHtml(stage.summary) + '</p>' +
+          '</div>' +
+          '<div class="command"><span>Source of truth or command</span><code>' + escapeHtml(stage.command) + '</code></div>' +
+          '<div class="detail-block"><h3>Allowed action</h3><p class="muted">' + escapeHtml(stage.action) + '</p></div>' +
+          '<div class="detail-block"><h3>Done condition</h3><ul>' +
+            stage.done.map(function (item) { return '<li>' + escapeHtml(item) + '</li>'; }).join("") +
+          '</ul></div>';
+      }
+
+      function renderDecisions(activeKey) {
+        var list = document.getElementById("decision-list");
+        list.innerHTML = decisions.map(function (item) {
+          var active = item.key === activeKey ? " active" : "";
+          return '<button class="decision' + active + '" type="button" data-decision="' + escapeHtml(item.key) + '">' + escapeHtml(item.label) + '</button>';
+        }).join("");
+        Array.prototype.forEach.call(list.querySelectorAll(".decision"), function (button) {
+          button.addEventListener("click", function () {
+            renderDecisions(button.dataset.decision);
+          });
+        });
+        renderDecisionOutput(decisions.find(function (item) { return item.key === activeKey; }) || decisions[0]);
+      }
+
+      function renderDecisionOutput(item) {
+        document.getElementById("decision-output").innerHTML =
+          '<div><h3>' + escapeHtml(item.label) + '</h3><p class="muted">' + escapeHtml(item.next) + '</p></div>' +
+          '<div class="output-grid">' +
+            '<div class="output-cell"><strong>Use</strong><span><code>' + escapeHtml(item.command) + '</code></span></div>' +
+            '<div class="output-cell"><strong>Writes?</strong><span>' + escapeHtml(item.write) + '</span></div>' +
+            '<div class="output-cell"><strong>Record</strong><span>' + escapeHtml(item.record) + '</span></div>' +
+          '</div>';
+      }
+
+      function applyTheme(theme) {
+        document.documentElement.dataset.theme = theme;
+      }
+
+      applyTheme(localStorage.getItem(themeKey) || (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+      window.addEventListener("storage", function (event) {
+        if (event.key === themeKey && event.newValue) applyTheme(event.newValue);
+      });
+      window.addEventListener("message", function (event) {
+        if (event.data && event.data.type === "kb-theme") applyTheme(event.data.theme);
+      });
+
+      renderStages("capture");
+      renderDecisions("attention");
+    })();
+  </script>
+</body>
+</html>

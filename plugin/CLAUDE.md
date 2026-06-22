@@ -18,14 +18,14 @@ After a dev rebuild, reload the plugin in Obsidian: Settings → Community Plugi
 
 ## KB System
 
-This plugin is the foundation for a broader knowledge base system. The KB lives at `knowledgebase/` in the parent vault. Six Claude Code skills drive KB operations (installed to `~/.claude/skills/` via `skills/install.sh` in the repo root):
+This plugin is the foundation for a broader knowledge base system. The KB lives at `knowledgebase/` in the parent vault. KB skills drive KB operations (installed to `~/.claude/skills/` via `skills/install.sh` in the repo root):
 
 - `/kb-ask` — scoped conversational session over a topic; reads summaries first, generates `obsidian://` citations
 - `/kb-ingest <url|path>` — ingests a single URL or PDF interactively; fetches, assigns topic, writes source note, updates reading list/summary/index, full checkpoint support
 - `/kb-queue [topic]` — batch processes a topic's `reading-list.md`; per-item approval checklist, checkpointing, and pause/resume for overnight runs
 - `/kb-synthesise [topic]` — generates concept/entity/synthesis notes from accumulated sources; applies page-creation threshold (stub for 1 source, full article for 2+)
 - `/kb-lint [topic]` — health check: broken wikilinks, orphan pages, missing stubs, incomplete frontmatter, contradictions, stale sources
-- `/kb-auto` — headless autonomous ingestion from `_dive-queue.md`; designed for `/schedule` or `/loop` runs
+- `/kb-auto` — headless autonomous ingestion from topic reading-list `## Auto-approved` sections; `_dive-queue.md` is generated/read-only
 
 The authorship guard (`src/guard.ts`) enforces that the plugin never writes to files it didn't create. All KB writes must go through `safeWrite()`. The KB folder name must be `knowledgebase/` (relative to vault root) — this is hardcoded in `guard.ts` as `KB_ROOT = "knowledgebase"`.
 

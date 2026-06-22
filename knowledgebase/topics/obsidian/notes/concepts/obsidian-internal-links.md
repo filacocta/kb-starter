@@ -8,8 +8,8 @@ title: "Internal Links and Wikilinks"
 description: "Internal linking is Obsidian's core distinguishing feature — the mechanism by which isolated notes become a connected knowledge graph."
 status: draft
 tags: ["obsidian", "wikilinks", "internal-links", "block-references", "graph"]
-sources: ["[[sources/2026-04-10-obsidian-internal-links]]", "[[sources/2026-04-10-obsidian-flavored-markdown]]"]
-related: ["[[notes/concepts/obsidian-markdown]]", "[[notes/concepts/obsidian-uri-protocol]]", "[[notes/concepts/obsidian-overview]]"]
+sources: ["[[knowledgebase/topics/obsidian/sources/2026-04-10-obsidian-internal-links]]", "[[knowledgebase/topics/obsidian/sources/2026-04-10-obsidian-flavored-markdown]]"]
+related: ["[[knowledgebase/topics/obsidian/notes/concepts/obsidian-markdown]]", "[[knowledgebase/topics/obsidian/notes/concepts/obsidian-uri-protocol]]", "[[knowledgebase/topics/obsidian/notes/concepts/obsidian-overview]]"]
 ---
 
 # Internal Links and Wikilinks
@@ -84,6 +84,6 @@ Obsidian auto-updates links on rename by default — if this is disabled, manual
 
 ## See Also
 
-- [[notes/concepts/obsidian-markdown]] — full OFM reference including embed syntax
-- [[notes/concepts/obsidian-uri-protocol]] — external deep-link protocol that complements internal links
-- [[notes/concepts/obsidian-overview]] — vault and graph model context
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-markdown]] — full OFM reference including embed syntax
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-uri-protocol]] — external deep-link protocol that complements internal links
+- [[knowledgebase/topics/obsidian/notes/concepts/obsidian-overview]] — vault and graph model context

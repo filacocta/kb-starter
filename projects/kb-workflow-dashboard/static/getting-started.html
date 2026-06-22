@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Getting Started - KB Workflow</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #eef1f4;
+    --top: #172026;
+    --top-ink: #f5f8f8;
+    --top-muted: #b8c7c9;
+    --line: #d5dde1;
+    --accent: #1e7568;
+    --accent-ink: #ffffff;
+    --tab-bg: #10171d;
+    --note-bg: #dcefed;
+    --note-ink: #123a35;
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #11161b;
+    --top: #0c1014;
+    --top-ink: #f6f9f9;
+    --top-muted: #aab7bc;
+    --line: #32414a;
+    --accent: #58b8a8;
+    --accent-ink: #061512;
+    --tab-bg: #151d24;
+    --note-bg: #183a36;
+    --note-ink: #d7efeb;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    font: 15px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 0 0 auto;
+    padding: 10px 16px;
+    background: var(--top);
+    color: var(--top-ink);
+    border-bottom: 1px solid var(--accent);
+  }
+
+  .topbar h1 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 700;
+  }
+
+  .home {
+    color: var(--top-muted);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .home:hover,
+  .home:focus-visible {
+    color: var(--top-ink);
+  }
+
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: auto;
+  }
+
+  .toggle {
+    display: inline-flex;
+    background: var(--tab-bg);
+    border: 1px solid color-mix(in srgb, var(--top-muted) 35%, transparent);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  button {
+    font: inherit;
+  }
+
+  .toggle button,
+  .theme-toggle {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--top-muted);
+    font-size: 13px;
+    min-height: 34px;
+    padding: 6px 11px;
+    cursor: pointer;
+  }
+
+  .toggle button {
+    border-right: 1px solid color-mix(in srgb, var(--top-muted) 25%, transparent);
+  }
+
+  .toggle button:last-child {
+    border-right: 0;
+  }
+
+  .toggle button.active {
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-weight: 750;
+  }
+
+  .toggle button:not(.active):hover,
+  .theme-toggle:hover {
+    color: var(--top-ink);
+    background: color-mix(in srgb, var(--top-muted) 16%, transparent);
+  }
+
+  .theme-toggle {
+    min-width: 64px;
+    border: 1px solid color-mix(in srgb, var(--top-muted) 35%, transparent);
+    border-radius: 6px;
+  }
+
+  button:focus-visible,
+  a:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    outline-offset: 2px;
+  }
+
+  .byline {
+    flex: 0 0 auto;
+    padding: 6px 16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--note-bg);
+    color: var(--note-ink);
+    font-size: 12.5px;
+  }
+
+  .frames {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  iframe {
+    position: absolute;
+    inset: 0;
+    display: none;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: var(--bg);
+  }
+
+  iframe.active {
+    display: block;
+  }
+
+  @media (max-width: 780px) {
+    .topbar {
+      align-items: start;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 6px 10px;
+    }
+
+    .actions {
+      grid-column: 1 / -1;
+      width: 100%;
+      margin-left: 0;
+      overflow-x: auto;
+    }
+
+    .toggle {
+      min-width: max-content;
+    }
+
+    .toggle button {
+      min-width: 82px;
+      padding-inline: 8px;
+    }
+
+    .home {
+      justify-self: end;
+      padding-top: 2px;
+    }
+  }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <h1>Getting Started</h1>
+    <a class="home" href="/">Dashboard</a>
+    <div class="actions">
+      <div class="toggle" role="tablist" aria-label="Choose write-up">
+        <button id="t-guide" class="active" role="tab" aria-selected="true">Map</button>
+        <button id="t-kbfeed" role="tab" aria-selected="false">kb-feed</button>
+        <button id="t-workflow" role="tab" aria-selected="false">Workflow</button>
+        <button id="t-system" role="tab" aria-selected="false">System</button>
+      </div>
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch color theme">Dark</button>
+    </div>
+  </div>
+  <div class="byline" id="byline">Workflow map: choose the dashboard state, then run the smallest safe KB workflow.</div>
+  <div class="frames">
+    <iframe id="f-workflow" title="Workflow getting-started view" src="/getting-started-claude.html"></iframe>
+    <iframe id="f-system" title="System getting-started view" src="/getting-started-codex.html"></iframe>
+    <iframe id="f-kbfeed" title="kb-feed getting-started view" src="/getting-started-kbfeed.html"></iframe>
+    <iframe id="f-guide" class="active" title="Operating getting-started guide" src="/getting-started-operating-guide.html"></iframe>
+  </div>
+
+  <script>
+    (function () {
+      var themeKey = "kb-dashboard-theme";
+      var views = {
+        guide: {
+          btn: document.getElementById("t-guide"),
+          frame: document.getElementById("f-guide"),
+          note: "Workflow map: choose the dashboard state, then run the smallest safe KB workflow."
+        },
+        workflow: {
+          btn: document.getElementById("t-workflow"),
+          frame: document.getElementById("f-workflow"),
+          note: "Workflow view: source-to-wiki mental model and skill overview."
+        },
+        system: {
+          btn: document.getElementById("t-system"),
+          frame: document.getElementById("f-system"),
+          note: "System view: schema, helper scripts, rules, and layout details."
+        },
+        kbfeed: {
+          btn: document.getElementById("t-kbfeed"),
+          frame: document.getElementById("f-kbfeed"),
+          note: "kb-feed: capture from a Telegram supergroup; threads route into KB queues."
+        }
+      };
+
+      function preferredTheme() {
+        var stored = localStorage.getItem(themeKey);
+        if (stored === "dark" || stored === "light") return stored;
+        return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      }
+
+      function pushTheme(theme) {
+        Object.keys(views).forEach(function (key) {
+          var frame = views[key].frame;
+          try {
+            if (frame.contentWindow) frame.contentWindow.postMessage({ type: "kb-theme", theme: theme }, "*");
+            if (frame.contentDocument) frame.contentDocument.documentElement.dataset.theme = theme;
+          } catch (error) {
+            return;
+          }
+        });
+      }
+
+      function applyTheme(theme) {
+        document.documentElement.dataset.theme = theme;
+        localStorage.setItem(themeKey, theme);
+        document.getElementById("theme-toggle").textContent = theme === "dark" ? "Light" : "Dark";
+        document.getElementById("theme-toggle").setAttribute("aria-pressed", theme === "dark" ? "true" : "false");
+        pushTheme(theme);
+      }
+
+      function show(name) {
+        Object.keys(views).forEach(function (key) {
+          var on = key === name;
+          var view = views[key];
+          view.btn.classList.toggle("active", on);
+          view.btn.setAttribute("aria-selected", on ? "true" : "false");
+          view.frame.classList.toggle("active", on);
+        });
+        document.getElementById("byline").textContent = views[name].note;
+        try {
+          history.replaceState(null, "", "#" + name);
+        } catch (error) {
+          return;
+        }
+        pushTheme(document.documentElement.dataset.theme || preferredTheme());
+      }
+
+      Object.keys(views).forEach(function (name) {
+        views[name].btn.addEventListener("click", function () { show(name); });
+        views[name].frame.addEventListener("load", function () {
+          pushTheme(document.documentElement.dataset.theme || preferredTheme());
+        });
+      });
+
+      document.getElementById("theme-toggle").addEventListener("click", function () {
+        applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+      });
+
+      applyTheme(preferredTheme());
+      if (location.hash === "#workflow") show("workflow");
+      else if (location.hash === "#system" || location.hash === "#codex") show("system");
+      else if (location.hash === "#kbfeed") show("kbfeed");
+      else show("guide");
+    })();
+  </script>
+</body>
+</html>
