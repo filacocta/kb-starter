@@ -7,9 +7,12 @@ import html
 import ipaddress
 import json
 import re
+import socket
 import sqlite3
 import subprocess
 import sys
+import time
+import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -19,6 +22,17 @@ from urllib.parse import parse_qs, urlparse
 
 DEFAULT_KB_ROOT = Path.home() / "Vault" / "knowledgebase"
 DEFAULT_STATE_DB = Path.home() / ".local" / "state" / "kb-feed" / "state.sqlite"
+# Per-project operational-health metric files (<project>.json) written by external jobs
+# (e.g. the sportsbook dismissal review). Surfaced on the Project Health page.
+DEFAULT_PROJECT_HEALTH_DIR = Path.home() / ".local" / "state" / "project-health"
+_HEALTH_RANK = {"red": 3, "yellow": 2, "green": 1, "": 0}
+
+# cswap output parsing
+_ACCOUNT_RE = re.compile(r"^\s+(\d+):\s+(\S+)\s+\[([^\]]+)\](\s+\(active\))?")
+_QUOTA_RE   = re.compile(r"^\s+[├└]\s+(5h|7d):\s+(\d+)%\s+resets\s+(.+?)\s{2,}in\s+(.+)")
+_OAUTH_RE   = re.compile(r"^\s+[•]\s+oauth:\s+(.+)")
+_SESSION_RE = re.compile(r"^\s+[●○]\s+(\S+)\s+(.+?)\s+\((\d+)\s+session")
+_UPGRADE_RE = re.compile(r"newer version.*available.*\((\S+)\)")
 REQUIRED_KB_PATHS = (
     "_schema.md",
     "_rules.md",
@@ -465,6 +479,109 @@ def validate_kb_root(kb_root: Path) -> list[str]:
     return missing
 
 
+_lint_cache: dict = {"ts": 0.0, "data": {}}
+LINT_CACHE_TTL = 60  # seconds
+
+
+def parse_lint_output(text: str, kb_root: Path) -> dict:
+    errors: list[dict] = []
+    warnings: list[dict] = []
+    summary: dict = {"kb_root": str(kb_root)}
+    section = None
+    current_item: dict | None = None
+
+    for line in text.splitlines():
+        if line.startswith("## Errors"):
+            section = "errors"
+            current_item = None
+            continue
+        if line.startswith("## Warnings"):
+            section = "warnings"
+            current_item = None
+            continue
+        if line.startswith("## Summary"):
+            section = "summary"
+            current_item = None
+            continue
+        if line.startswith("## "):
+            section = None
+            current_item = None
+            continue
+
+        if section == "summary":
+            m = re.match(r"-\s+(\d+) md files scanned", line)
+            if m:
+                summary["files_scanned"] = int(m.group(1))
+            m = re.match(r"-\s+(\d+) errors,\s+(\d+) warnings", line)
+            if m:
+                summary["errors"] = int(m.group(1))
+                summary["warnings"] = int(m.group(2))
+            continue
+
+        if section in ("errors", "warnings"):
+            if line.startswith("### ") or line.strip().startswith("…and"):
+                current_item = None
+                continue
+            ctx_m = re.match(r"^\s+↳\s+`(.+)`\s*$", line)
+            if ctx_m and current_item is not None:
+                current_item["context"] = ctx_m.group(1)
+                continue
+            item_m = re.match(r"^\s*-\s+`([^`]+):(\d+)`\s+—\s+(.+)$", line)
+            if item_m:
+                current_item = {
+                    "file": item_m.group(1),
+                    "line": int(item_m.group(2)),
+                    "message": item_m.group(3).strip(),
+                    "context": "",
+                }
+                (errors if section == "errors" else warnings).append(current_item)
+                continue
+            item_m2 = re.match(r"^\s*-\s+`([^`]+)`\s+—\s+(.+)$", line)
+            if item_m2:
+                current_item = {
+                    "file": item_m2.group(1),
+                    "line": None,
+                    "message": item_m2.group(2).strip(),
+                    "context": "",
+                }
+                (errors if section == "errors" else warnings).append(current_item)
+                continue
+            current_item = None
+
+    for e in errors:
+        msg = e["message"]
+        if "unresolved wikilink:" in msg:
+            e["code"] = "unresolved_wikilink"
+            e["target"] = msg.split("unresolved wikilink:", 1)[1].strip()
+        else:
+            e["code"] = "error"
+            e["target"] = ""
+    for w in warnings:
+        w["code"] = "warning"
+        w["target"] = ""
+
+    summary.setdefault("errors", len(errors))
+    summary.setdefault("warnings", len(warnings))
+    return {"errors": errors, "warnings": warnings, "summary": summary}
+
+
+def run_lint(kb_root: Path, bust: bool = False) -> dict:
+    now = time.monotonic()
+    if not bust and _lint_cache["ts"] and (now - _lint_cache["ts"]) < LINT_CACHE_TTL:
+        return _lint_cache["data"]
+    try:
+        proc = subprocess.run(
+            ["kb-lint", "--no-orphans"],
+            capture_output=True, text=True, timeout=120,
+        )
+        data = parse_lint_output(proc.stdout, kb_root)
+    except Exception as exc:
+        data = {"errors": [], "warnings": [], "summary": {"error": str(exc), "kb_root": str(kb_root)}}
+    _lint_cache["ts"] = now
+    _lint_cache["data"] = data
+    return data
+
+
 def host_is_loopback(host: str) -> bool:
     normalized = host.strip("[]").lower()
     if normalized == "localhost":
@@ -636,10 +753,147 @@ def run_promote(kb_root: Path, app_dir: Path, payload: dict, execute: bool) -> t
     return (200 if result.get("ok") else 422), result
 
 
+def parse_cswap_usage() -> dict:
+    """Run `cswap --list --token-status` and parse usage for all accounts + sessions."""
+    # cswap lives in ~/.local/bin which may not be on systemd's PATH
+    cswap_candidates = [
+        "cswap",
+        str(Path.home() / ".local" / "bin" / "cswap"),
+    ]
+    for cmd in cswap_candidates:
+        try:
+            proc = subprocess.run(
+                [cmd, "--list", "--token-status"],
+                capture_output=True, text=True, timeout=10,
+            )
+            return _parse_cswap_output(proc.stdout)
+        except FileNotFoundError:
+            continue
+    return {"error": "cswap not found", "accounts": [], "sessions": [], "upgrade_available": None}
+
+
+def _parse_cswap_output(text: str) -> dict:
+    accounts: list[dict] = []
+    sessions: list[dict] = []
+    current: dict | None = None
+    in_sessions = False
+    upgrade_available: str | None = None
+
+    for line in text.splitlines():
+        m = _UPGRADE_RE.search(line)
+        if m:
+            upgrade_available = m.group(1)
+            continue
+
+        if "Running instances:" in line:
+            in_sessions = True
+            if current:
+                accounts.append(current)
+                current = None
+            continue
+
+        if in_sessions:
+            m = _SESSION_RE.match(line)
+            if m:
+                sessions.append({
+                    "type": m.group(1),
+                    "path": m.group(2).strip(),
+                    "count": int(m.group(3)),
+                })
+            continue
+
+        m = _ACCOUNT_RE.match(line)
+        if m:
+            if current:
+                accounts.append(current)
+            current = {
+                "slot": int(m.group(1)),
+                "email": m.group(2),
+                "org": m.group(3),
+                "active": bool(m.group(4)),
+                "quota_5h": None,
+                "quota_7d": None,
+                "oauth": None,
+            }
+            continue
+
+        if current is None:
+            continue
+
+        m = _QUOTA_RE.match(line)
+        if m:
+            key = "quota_5h" if m.group(1) == "5h" else "quota_7d"
+            current[key] = {
+                "pct": int(m.group(2)),
+                "resets_at": m.group(3).strip(),
+                "resets_in": m.group(4).strip(),
+            }
+            continue
+
+        m = _OAUTH_RE.match(line)
+        if m:
+            current["oauth"] = m.group(1).strip()
+
+    if current:
+        accounts.append(current)
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "accounts": accounts,
+        "sessions": sessions,
+        "upgrade_available": upgrade_available,
+    }
+
+
+def parse_project_health(health_dir: Path) -> dict:
+    """Aggregate per-project operational-health metric files for the Project Health page.
+
+    Each `<project>.json` is written by an external job and shaped:
+        {project, title, updated, metrics: [{name, status, summary, detail, updated}]}
+    status ∈ green | yellow | red. A metric whose `updated` is > STALE_HOURS old is marked stale
+    (the producer stopped running) and rolls up as yellow. Returns the projects (worst-status
+    first) plus a roll-up summary."""
+    stale_hours = 36
+    now = datetime.now(timezone.utc)
+    projects: list[dict] = []
+    summary = {"green": 0, "yellow": 0, "red": 0, "stale": 0}
+
+    def _stale(updated: object) -> bool:
+        try:
+            t = datetime.fromisoformat(str(updated).replace("Z", "+00:00"))
+            return (now - t).total_seconds() > stale_hours * 3600
+        except Exception:
+            return False
+
+    if health_dir.exists():
+        for f in sorted(health_dir.glob("*.json")):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            worst = "green"
+            for m in data.get("metrics", []):
+                st = (m.get("status") or "green").lower()
+                m["stale"] = _stale(m.get("updated") or data.get("updated"))
+                if m["stale"]:
+                    summary["stale"] += 1
+                    st = "yellow" if st == "green" else st
+                    m["status"] = st
+                summary[st] = summary.get(st, 0) + 1
+                if _HEALTH_RANK.get(st, 0) > _HEALTH_RANK.get(worst, 0):
+                    worst = st
+            data["worst"] = worst
+            projects.append(data)
+    projects.sort(key=lambda d: -_HEALTH_RANK.get(d.get("worst", ""), 0))
+    return {"generated": now.isoformat(), "projects": projects,
+            "summary": summary, "health_dir": str(health_dir)}
+
+
 class DashboardHandler(SimpleHTTPRequestHandler):
     kb_root: Path
     state_db: Path
     static_dir: Path
+    project_health_dir: Path = DEFAULT_PROJECT_HEALTH_DIR
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(self.static_dir), **kwargs)
@@ -667,6 +921,16 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self.send_json({"error": "unknown_queue", "path": queue_path}, status=404)
                 return
             self.send_json(queue_payload(queue, include_items=True))
+            return
+        if parsed.path == "/api/lint":
+            bust = "bust" in parse_qs(parsed.query)
+            self.send_json(run_lint(self.kb_root, bust=bool(bust)))
+            return
+        if parsed.path == "/api/project-health":
+            self.send_json(parse_project_health(self.project_health_dir))
+            return
+        if parsed.path == "/api/claude-usage":
+            self.send_json(parse_cswap_usage())
             return
         if parsed.path == "/favicon.ico":
             self.send_response(204)
@@ -703,6 +967,28 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             action = "enable" if parsed.path.endswith("enable") else "disable"
             status, result = run_timer_toggle(self.static_dir.parent, payload, action)
             self.send_json(result, status=status)
+            return
+        if parsed.path == "/api/probe":
+            payload = self._read_json_body()
+            if payload is None or not isinstance(payload.get("urls"), list):
+                self.send_json({"ok": False, "error": "bad_request"}, status=400)
+                return
+            results = {}
+            for url in payload["urls"][:32]:
+                try:
+                    p = urlparse(url)
+                    host = p.hostname or ""
+                    port = p.port or (443 if p.scheme == "https" else 80)
+                    # Resolve hostname then attempt TCP connect (3s timeout)
+                    addr = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)[0][4]
+                    sock = socket.socket()
+                    sock.settimeout(3)
+                    sock.connect(addr)
+                    sock.close()
+                    results[url] = True
+                except Exception:
+                    results[url] = False
+            self.send_json({"ok": True, "results": results})
             return
         self.send_json({"error": "not_found"}, status=404)
 
@@ -755,6 +1041,7 @@ def main() -> int:
     parser.add_argument("--state-db", type=Path, default=DEFAULT_STATE_DB)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8787)
+    parser.add_argument("--project-health-dir", type=Path, default=DEFAULT_PROJECT_HEALTH_DIR)
     parser.add_argument(
         "--allow-non-loopback",
         action="store_true",
@@ -778,6 +1065,7 @@ def main() -> int:
             "kb_root": kb_root,
             "state_db": args.state_db.expanduser().resolve(),
             "static_dir": static_dir,
+            "project_health_dir": args.project_health_dir.expanduser().resolve(),
         },
     )
     server = ThreadingHTTPServer((args.host, args.port), handler)

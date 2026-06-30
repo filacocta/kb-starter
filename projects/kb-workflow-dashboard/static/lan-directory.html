@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LAN Directory — KB Dashboard</title>
+    <link rel="stylesheet" href="/styles.css">
+    <style>
+      .dir-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 1rem;
+        padding: 0;
+      }
+      .service-card {
+        border: 1px solid var(--border, #ddd);
+        border-radius: 8px;
+        padding: 1rem 1.2rem;
+        display: flex;
+        flex-direction: column;
+        gap: .35rem;
+        transition: border-color .15s, box-shadow .15s;
+        text-decoration: none;
+        color: inherit;
+      }
+      .service-card:hover {
+        border-color: var(--accent, #4c8);
+        box-shadow: 0 2px 8px rgba(0,0,0,.08);
+      }
+      .service-card .card-name {
+        font-weight: 600;
+        font-size: 1rem;
+      }
+      .service-card .card-host {
+        font-family: monospace;
+        font-size: .8rem;
+        color: var(--muted, #888);
+      }
+      .service-card .card-desc {
+        font-size: .85rem;
+        color: var(--text-secondary, #555);
+        margin-top: .1rem;
+      }
+      [data-theme="dark"] .service-card .card-desc { color: #aaa; }
+      .service-card .card-status {
+        display: inline-block;
+        font-size: .72rem;
+        font-weight: 600;
+        padding: .15rem .45rem;
+        border-radius: 4px;
+        margin-top: .2rem;
+        align-self: flex-start;
+      }
+      .card-status.local    { background: #e0f3ea; color: #1a6e40; }
+      .card-status.lan      { background: #e8f0fb; color: #1a4a8a; }
+      .card-status.pi       { background: #fef3e0; color: #8a4a00; }
+      .card-status.router   { background: #f0e8fb; color: #5a1a8a; }
+      .card-status.external { background: #fbe8e8; color: #8a1a1a; }
+      [data-theme="dark"] .card-status.local    { background: #1a3d2a; color: #5dce8e; }
+      [data-theme="dark"] .card-status.lan      { background: #1a2a4a; color: #6aa0f0; }
+      [data-theme="dark"] .card-status.pi       { background: #3d2a00; color: #f0a030; }
+      [data-theme="dark"] .card-status.router   { background: #2a1a3d; color: #c080f0; }
+      [data-theme="dark"] .card-status.external { background: #3d1a1a; color: #f08080; }
+      .section-group { margin-bottom: 2rem; }
+      .section-group h2 {
+        font-size: .75rem;
+        font-weight: 700;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        color: var(--muted, #888);
+        margin: 0 0 .75rem 0;
+        padding-bottom: .3rem;
+        border-bottom: 1px solid var(--border, #ddd);
+      }
+      .ping-dot {
+        display: inline-block;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #ccc;
+        margin-right: .4rem;
+        vertical-align: middle;
+      }
+      .ping-dot.up   { background: #2a9; }
+      .ping-dot.down { background: #d44; }
+      .refresh-row {
+        display: flex;
+        align-items: center;
+        gap: .75rem;
+        margin-bottom: 1.25rem;
+        font-size: .85rem;
+        color: var(--muted, #888);
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand-block">
+        <div class="brand-line">
+          <h1>LAN Directory</h1>
+          <span class="mode-chip">Local network</span>
+        </div>
+        <p id="subhead">Services running on this machine and the home network</p>
+      </div>
+      <nav class="top-actions" aria-label="Dashboard actions">
+        <a class="top-link top-action" href="/">Home</a>
+        <a class="top-link top-action" href="/broken-links.html">Lint</a>
+        <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch color theme">Dark</button>
+        <button class="top-action" id="refresh-btn" type="button" title="Probe all services">Refresh</button>
+      </nav>
+    </header>
+
+    <main>
+      <div class="refresh-row">
+        <span id="probe-status">Click Refresh to probe service availability.</span>
+      </div>
+
+      <div class="section-group">
+        <h2>This Machine (localhost)</h2>
+        <div class="dir-grid" id="grid-local"></div>
+      </div>
+
+      <div class="section-group">
+        <h2>Raspberry Pi</h2>
+        <div class="dir-grid" id="grid-pi"></div>
+      </div>
+
+      <div class="section-group">
+        <h2>LAN</h2>
+        <div class="dir-grid" id="grid-lan"></div>
+      </div>
+
+      <div class="section-group">
+        <h2>External / Hosted</h2>
+        <div class="dir-grid" id="grid-external"></div>
+      </div>
+    </main>
+
+    <script>
+      // ── Service registry ──────────────────────────────────────────────────
+      const SERVICES = [
+        // Local (this machine)
+        {
+          group: "local",
+          name: "KB Dashboard",
+          url: "http://kb.local:8787",
+          host: "kb.local:8787",
+          desc: "KB workflow, queues, lint review, LAN directory",
+          tag: "local",
+        },
+        {
+          group: "local",
+          name: "Pokemon TCG AI — Arena Viz",
+          url: "http://localhost:8765",
+          host: "localhost:8765",
+          desc: "Live battle visualiser for the PTCG AI engine",
+          tag: "local",
+        },
+        // Raspberry Pi
+        {
+          group: "pi",
+          name: "Pi-hole Admin",
+          url: "http://192.168.0.45/admin",
+          host: "192.168.0.45 (pihole.local)",
+          desc: "DNS-level ad blocker; network-wide query stats and blocklist management",
+          tag: "pi",
+        },
+        {
+          group: "pi",
+          name: "MarketingBot",
+          url: "http://192.168.0.164",
+          host: "pizero2 — 192.168.0.164",
+          desc: "Self-hosted social media scheduler; FastAPI + HTMX + APScheduler on Pi Zero 2",
+          tag: "pi",
+        },
+        {
+          group: "pi",
+          name: "pizero2 — LAN Status",
+          url: "http://192.168.0.164/status/",
+          host: "pizero2 — 192.168.0.164/status/",
+          desc: "LAN host health page; Python cron + static HTML; auto-refreshes every 60s",
+          tag: "pi",
+        },
+        // LAN
+        {
+          group: "lan",
+          name: "Router",
+          url: "http://192.168.0.1",
+          host: "AXE5400 — 192.168.0.1",
+          desc: "Main router / gateway / DHCP server; Wi-Fi 6E",
+          tag: "router",
+        },
+        {
+          group: "lan",
+          name: "IoT device — port 3000",
+          url: "http://192.168.0.115:3000",
+          host: "192.168.0.115:3000",
+          desc: "Dahua-protocol JSON device (security camera / NVR?) — not a web UI",
+          tag: "lan",
+        },
+        {
+          group: "lan",
+          name: "Unknown — port 8080",
+          url: "http://192.168.0.16:8080",
+          host: "192.168.0.16:8080",
+          desc: "Unidentified service — currently returning 404; update once identified",
+          tag: "lan",
+        },
+        // External hosted
+        {
+          group: "external",
+          name: "povar.app",
+          url: "https://povar.app/",
+          host: "povar.app",
+          desc: "Sportsbook EV automation — bet alerts, approval gate, results tracking; AWS-hosted",
+          tag: "external",
+        },
+        {
+          group: "external",
+          name: "app.alephvue.com",
+          url: "https://app.alephvue.com/",
+          host: "app.alephvue.com",
+          desc: "AlephVue app — AWS-hosted",
+          tag: "external",
+        },
+        {
+          group: "external",
+          name: "bumps.cafe",
+          url: "https://www.bumps.cafe/",
+          host: "www.bumps.cafe",
+          desc: "Ambient photo + music experience; Flask on PythonAnywhere (Hacker plan)",
+          tag: "external",
+        },
+        {
+          group: "external",
+          name: "Odd Analytics (Ackee)",
+          url: "https://oddanalytics.herokuapp.com/",
+          host: "oddanalytics.herokuapp.com",
+          desc: "Self-hosted Ackee analytics instance; Heroku — check if still serving bumps.cafe traffic",
+          tag: "external",
+        },
+      ];
+
+      // ── Render ─────────────────────────────────────────────────────────────
+      function renderCards(services, statusMap) {
+        const groups = { local: [], pi: [], lan: [], external: [] };
+        services.forEach(s => (groups[s.group] || groups.lan).push(s));
+
+        ["local", "pi", "lan", "external"].forEach(g => {
+          const el = document.getElementById(`grid-${g}`);
+          el.innerHTML = groups[g].map(s => {
+            const st = statusMap[s.url];
+            const dot = st === undefined ? "" :
+              `<span class="ping-dot ${st ? "up" : "down"}"></span>`;
+            return `
+              <a class="service-card" href="${s.url}" target="_blank" rel="noopener">
+                <span class="card-name">${dot}${s.name}</span>
+                <span class="card-host">${s.host}</span>
+                <span class="card-desc">${s.desc}</span>
+                <span class="card-status ${s.tag}">${s.tag.toUpperCase()}</span>
+              </a>`;
+          }).join("");
+        });
+      }
+
+      // ── Probe via /api/probe ───────────────────────────────────────────────
+      async function probeAll() {
+        const btn = document.getElementById("refresh-btn");
+        const status = document.getElementById("probe-status");
+        btn.disabled = true;
+        status.textContent = "Probing…";
+        const urls = SERVICES.map(s => s.url);
+        try {
+          const res = await fetch("/api/probe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ urls }),
+          });
+          const data = await res.json();
+          renderCards(SERVICES, data.results || {});
+          const up = Object.values(data.results || {}).filter(Boolean).length;
+          status.textContent = `${up} / ${urls.length} services reachable — ${new Date().toLocaleTimeString()}`;
+        } catch (e) {
+          status.textContent = `Probe failed: ${e.message}`;
+        }
+        btn.disabled = false;
+      }
+
+      // ── Theme toggle (mirrors app.js pattern) ────────────────────────────
+      const THEME_KEY = "kb-theme";
+      const toggle = document.getElementById("theme-toggle");
+      function applyTheme(t) {
+        document.documentElement.setAttribute("data-theme", t);
+        toggle.textContent = t === "dark" ? "Light" : "Dark";
+        localStorage.setItem(THEME_KEY, t);
+      }
+      applyTheme(localStorage.getItem(THEME_KEY) || "light");
+      toggle.addEventListener("click", () =>
+        applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark")
+      );
+
+      // ── Init ──────────────────────────────────────────────────────────────
+      renderCards(SERVICES, {});
+      document.getElementById("refresh-btn").addEventListener("click", probeAll);
+      probeAll();
+    </script>
+  </body>
+</html>
