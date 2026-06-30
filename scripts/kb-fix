@@ -37,6 +37,12 @@ stub_frontmatter
     Skips _summary.md, _index.md, README.md and daily notes (they have their
     own schema conventions).
 
+quote_frontmatter_colon
+    Wraps unquoted frontmatter scalar values that contain `: ` in double
+    quotes, preventing Obsidian YAML parse errors.  Only acts on single-line
+    scalar values; skips values already wrapped in single or double quotes and
+    multiline / list entries.
+
 Exit codes
 ----------
 0  nothing to fix (or --dry-run with no changes)
@@ -298,15 +304,55 @@ def _fix_stub_frontmatter(text: str, rel: str) -> tuple[str, int, list[str]]:
     return new_text, 1, [sample]
 
 
+_FM_KEY_VALUE_RE = re.compile(r'^(\w[\w-]*):\s+(.+)$')
+
+
+def _fix_quote_frontmatter_colon(text: str) -> tuple[str, int, list[str]]:
+    """Quote frontmatter scalar values that contain ': ' (YAML-significant colon)."""
+    m = FRONTMATTER_RE.match(text)
+    if not m:
+        return text, 0, []
+
+    lines = m.group(1).split("\n")
+    new_lines: list[str] = []
+    changes = 0
+    samples: list[str] = []
+
+    for line in lines:
+        km = _FM_KEY_VALUE_RE.match(line)
+        if km:
+            key, value = km.group(1), km.group(2).strip()
+            already_quoted = (
+                (value.startswith('"') and value.endswith('"')) or
+                (value.startswith("'") and value.endswith("'"))
+            )
+            if not already_quoted and (': ' in value or value.endswith(':')):
+                escaped = value.replace('\\', '\\\\').replace('"', '\\"')
+                new_line = f'{key}: "{escaped}"'
+                if len(samples) < 3:
+                    samples.append(f'{key}: unquoted → quoted')
+                new_lines.append(new_line)
+                changes += 1
+                continue
+        new_lines.append(line)
+
+    if not changes:
+        return text, 0, []
+
+    new_fm = "\n".join(new_lines)
+    return f"---\n{new_fm}\n---\n{text[m.end():]}", changes, samples
+
+
 # ── Fixer registry ────────────────────────────────────────────────────────────
 
-ALL_FIXERS = ["unrendered_math", "missing_author", "infer_frontmatter", "stub_frontmatter"]
+ALL_FIXERS = ["unrendered_math", "missing_author", "infer_frontmatter", "stub_frontmatter", "quote_frontmatter_colon"]
 
 FIXER_DESCRIPTIONS = {
     "unrendered_math": "LaTeX: `\\cmd` patterns → $$\\cmd$$ display math",
     "missing_author": "add author: kb-bot to notes missing the field",
     "infer_frontmatter": "add type: and topic: inferred from file path",
     "stub_frontmatter": "prepend minimal frontmatter to files with none at all",
+    "quote_frontmatter_colon": "quote frontmatter values containing ': ' to prevent YAML parse errors",
 }
 
 
@@ -329,6 +375,8 @@ def apply_fixers(path: Path, rel: str, fixers: list[str], dry_run: bool) -> list
             new, count, samples = _fix_infer_frontmatter(current, rel)
         elif fixer == "stub_frontmatter":
             new, count, samples = _fix_stub_frontmatter(current, rel)
+        elif fixer == "quote_frontmatter_colon":
+            new, count, samples = _fix_quote_frontmatter_colon(current)
         else:
             continue
 
