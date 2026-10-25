@@ -33,6 +33,7 @@ knowledgebase/_tools/staging/
 knowledgebase/_tools/runs/
 knowledgebase/_tools/cache/
 knowledgebase/_tools/*.log
+projects/*/command-log.jsonl
 knowledgebase/.kb-write.lock
 knowledgebase/_url-aliases.json
 knowledgebase/_kb-index.json
