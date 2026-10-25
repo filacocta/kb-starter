@@ -57,6 +57,47 @@ def test_sources_are_opt_in_and_staging_is_excluded(tmp_path):
     assert noise.returncode == 1
 
 
+@pytest.mark.parametrize('path,kind', [
+    ('_workflows/ingest.md', 'control'),
+    ('_templates/project-summary.md', 'control'),
+    ('team-share/templates/current-context.md', 'control'),
+    ('readinglist/Links.md', 'capture'),
+    ('clippings/raw.md', 'capture'),
+])
+def test_controls_and_captures_need_deliberate_selection(tmp_path, path, kind):
+    note(tmp_path, path, '# Form\nreservedcanary\n')
+    result = invoke(tmp_path, '--domain', 'work', '--body', '-q', 'reservedcanary', '--json')
+    assert result.returncode == 1, result.stdout
+    selected = invoke(tmp_path, '--domain', 'work', '--read', path, '--json')
+    assert selected.returncode == 0, selected.stderr
+    assert json.loads(selected.stdout)['results'][0]['role'] == kind
+
+
+def test_control_folder_cannot_supply_a_default_context_map(tmp_path):
+    note(tmp_path, 'templates/_context-map.md', '# Not a navigation authority\n')
+    note(tmp_path, 'team-share/_context-map.md', '# Team navigation\n')
+    result = invoke(tmp_path, '--domain', 'work', '--context', '--json')
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)['results'][0]['path'] == 'team-share/_context-map.md'
+
+
+@pytest.mark.parametrize('has_index', [False, True])
+def test_retired_peek_reports_migration_before_root_or_index_access(tmp_path, has_index):
+    source = note(tmp_path, 'sources/archive/original.md', '# Original\nprivatecanary\n')
+    if has_index:
+        (tmp_path / '_kb-index.json').write_text('{}')
+    before = source.read_bytes()
+    result = invoke(tmp_path, '--peek', 'sources/archive/original.md')
+    assert result.returncode == 2
+    assert '--peek is retired' in result.stderr
+    assert '--read' in result.stderr and '--domain' in result.stderr
+    assert not result.stdout
+    assert source.read_bytes() == before
+    unbound = invoke(None, '--peek', 'missing.md', env={
+        'CODEX_HOME': str(tmp_path / 'no-codex'), 'CLAUDE_HOME': str(tmp_path / 'no-claude')})
+    assert unbound.returncode == 2 and '--peek is retired' in unbound.stderr
+
+
 def test_context_contains_the_requested_summary(tmp_path):
     note(tmp_path, 'topics/demo/_summary.md', '---\nauthor: kb-bot\n---\n# Demo\nA disputed observation.\n')
     note(tmp_path, 'topics/other/_summary.md', '# Other\nUnrelated context.\n')

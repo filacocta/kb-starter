@@ -110,6 +110,31 @@ def test_renamed_document_is_checked_as_changed(tmp_path):
     assert json.loads(result.stdout)['changed_files_with_errors'] == 1
 
 
+def test_changed_and_untracked_quoted_git_paths_are_checked(tmp_path):
+    def git(*args):
+        return subprocess.run(['git', '-C', str(tmp_path), *args], check=True, capture_output=True)
+    git('init', '-q')
+    path = tmp_path / 'notes/café.md'
+    path.parent.mkdir(parents=True)
+    valid = '---\ntitle: Note\ntype: note\nstatus: draft\nmodified: 2026-01-01\n---\n# Note\n'
+    path.write_text(valid)
+    git('add', '.')
+    git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture')
+    path.write_text(valid.replace('2026-01-01', 'invalid'))
+    new = path.with_name('new-ü\tfile.md')
+    new.write_text('# New note without metadata\n')
+    template = tmp_path / 'team-share/templates/current-context.md'
+    template.parent.mkdir(parents=True)
+    template.write_text('# New template without metadata\n')
+    result = subprocess.run([sys.executable, str(REPO / 'scripts/kb-audit'), '--domain', 'work',
+                             '--kb-root', str(tmp_path), '--changed-from', 'HEAD', '--json'], capture_output=True, text=True)
+    assert result.returncode == 1, result.stderr
+    report = json.loads(result.stdout)
+    assert report['changed_files_with_errors'] == 3
+    assert {row['path'] for row in report['findings'] if row['changed']} == {
+        'notes/café.md', 'notes/new-ü\tfile.md', 'team-share/templates/current-context.md'}
+
+
 def test_known_legacy_contract_is_removed_but_customizations_stop_upgrade(tmp_path):
     fixture = tmp_path / 'release'
     shutil.copytree(REPO / 'skills', fixture / 'skills')

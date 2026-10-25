@@ -5,11 +5,69 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "_tools" / "kb-lint.py"
+
+
+@pytest.mark.parametrize('topic', ['missing', '../../outside', '../outside', 'demo/../other'])
+def test_cli_rejects_missing_or_escaping_topic_scope(tmp_path, topic):
+    root = tmp_path / 'kb'
+    (root / 'topics/demo').mkdir(parents=True)
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    (outside / 'sentinel.md').write_text('# Outside scope\n')
+    result = subprocess.run([sys.executable, str(SCRIPT), '--kb-root', str(root),
+                             '--topic', topic, '--check', 'frontmatter'], capture_output=True, text=True)
+    assert result.returncode == 2, result.stdout
+    assert 'error' in json.loads(result.stdout)
+    assert 'sentinel.md' not in result.stdout
+
+
+def test_cli_rejects_symlinked_topic_scope(tmp_path):
+    root = tmp_path / 'kb'
+    (root / 'topics').mkdir(parents=True)
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    (root / 'topics/linked').symlink_to(outside, target_is_directory=True)
+    result = subprocess.run([sys.executable, str(SCRIPT), '--kb-root', str(root),
+                             '--topic', 'linked', '--check', 'frontmatter'], capture_output=True, text=True)
+    assert result.returncode == 2, result.stdout
+
+
+def test_cli_rejects_project_check_under_topic_scope(tmp_path):
+    (tmp_path / 'topics/demo').mkdir(parents=True)
+    result = subprocess.run([sys.executable, str(SCRIPT), '--kb-root', str(tmp_path),
+                             '--topic', 'demo', '--check', 'projects'], capture_output=True, text=True)
+    assert result.returncode == 2, result.stdout
+
+
+def test_cli_limits_project_checks_and_reports_checked_files(tmp_path):
+    project = tmp_path / 'projects/demo'
+    project.mkdir(parents=True)
+    (project / '_summary.md').write_text('---\nauthor: kb-bot\ncreated: 2026-01-01\nmodified: 2026-01-01\ntype: meta\n---\n# Demo\n')
+    other = tmp_path / 'projects/other'
+    other.mkdir()
+    (other / '_summary.md').write_text('# Missing metadata\n')
+    result = subprocess.run([sys.executable, str(SCRIPT), '--kb-root', str(tmp_path),
+                             '--project', 'demo', '--check', 'frontmatter'], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report['files_checked'] == 1 and report['scope'] == 'demo'
+    assert report['scope_kind'] == 'project' and not report['findings']
+
+
+def test_cli_reports_an_existing_empty_topic_without_claiming_files_checked(tmp_path):
+    (tmp_path / 'topics/demo').mkdir(parents=True)
+    result = subprocess.run([sys.executable, str(SCRIPT), '--kb-root', str(tmp_path),
+                             '--topic', 'demo', '--check', 'frontmatter'], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)['files_checked'] == 0
 
 
 def load_lint_module():
