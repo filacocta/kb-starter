@@ -1,17 +1,13 @@
-# kb-tweet-fetch.py
+# Structured social-source inventory
 
-Fetch structured tweet data from the unauthenticated fxtwitter API for KB ingestion.
+Run `python kb-tweet-fetch.py <approved-locator> --inventory status` (or an
+explicitly approved `--inventory thread`) after dedup and approval. This fetches
+one bounded endpoint, inventories its full returned channels and performs no
+companion/media downloads. The shared publication gate review must inspect substantive
+article, quote, continuation, link and media channels; compact output is not the
+evidence packet. Missing channels remain explicit.
 
-```bash
-_tools/.venv/bin/python _tools/kb-tweet-fetch.py "https://x.com/user/status/123" --json --out /tmp/tweet.md
-```
-
-The JSON includes:
-
-- `main`: the requested tweet with author, preferred raw text, photos, videos, and timestamp.
-- `quote`: the full quoted tweet in the same compact shape, when present.
-- `thread`: an ordered root-to-given self-reply chain found by walking upward through `replying_to_status`.
-- `flags`: thread-start detection and a forward-walk note when the requested tweet appears to start a thread.
-- `video_urls`: de-duplicated video URLs across the main tweet, quoted tweet, and thread.
-
-Use `--max-thread` to cap upward thread hops. The default is `30`.
+`kb-fxtwitter-extract.py` inventories a supplied JSON payload offline.
+Neither tool proves whole-thread coverage, factual correctness or retained raw
+HTTP bytes. No model or API-key route is required. Old `--out` sinks are retired.
+See `README.md` and executable `--help` for current bounds and flags.

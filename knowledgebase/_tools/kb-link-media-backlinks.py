@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """Suggest (and optionally apply) See Also backlinks from mutable concept/synthesis notes
-to media-description notes whose parent source note is immutable per Rule 11.
+to media-description notes whose parent source note is immutable per source preservation contract.
 
 Problem this addresses:
-When media is retro-captured after its parent source note was written, Rule 11 freezes
+When media is retro-captured after its parent source note was written, source preservation contract freezes
 the source-note `media:` block — the source cannot be updated to point at the new
 media-description note. The media-description note therefore has no incoming wikilinks
 from any other content note in the KB, and surfaces as an orphan during lint.
 
 Workflow integration:
-Called from kb-ingest / kb-queue / kb-auto's "capture media" phase, immediately after
+Called from kb-ingest and the internal kb-auto worker's media phase, immediately after
 writing the media-description note. The script identifies mutable kb-bot-authored
 concept / entity / synthesis notes that share thematic anchors with the new media note
 (shared source citations or shared related: entries), ranks them, and outputs
-suggested See Also entries. With --apply, appends those entries directly (Rule 12
+suggested See Also entries. With --apply, appends those entries directly (article maintenance
 append-only) with the kb-bot authorship guard.
 
 Usage:
@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Any
 
 WIKILINK_RE = re.compile(r"\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]")
-MUTABLE_NOTE_KINDS = ("concepts", "entities", "syntheses")  # NOT sources (Rule 11), NOT media (self-reference)
+MUTABLE_NOTE_KINDS = ("concepts", "entities", "syntheses")  # NOT sources (source preservation contract), NOT media (self-reference)
 
 
 def rel(path: Path, kb_root: Path) -> str:
@@ -50,7 +50,7 @@ def rel(path: Path, kb_root: Path) -> str:
 
 def vault_link(path: Path, kb_root: Path) -> str:
     """Vault-rooted wikilink target form, e.g. 'knowledgebase/topics/foo/notes/bar'.
-    Wikilinks in the KB always include the 'knowledgebase/' prefix per Rule 15.
+    Wikilinks in the KB always include the 'knowledgebase/' prefix per link format.
     """
     r = path.relative_to(kb_root).as_posix()
     if r.endswith(".md"):
@@ -288,7 +288,7 @@ def append_see_also_entry(
 
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--kb-root", default="~/Vault/knowledgebase")
+    p.add_argument("--kb-root", default=str(Path(__file__).resolve().parents[1]))
     p.add_argument(
         "--media-note",
         help="Path to a specific media-description note (relative to kb-root or absolute)",
@@ -303,7 +303,7 @@ def main() -> int:
     p.add_argument(
         "--apply",
         action="store_true",
-        help="Actually append the suggested See Also entries (Rule 12 append-only, kb-bot guard)",
+        help="Actually append the suggested See Also entries (article maintenance append-only, kb-bot guard)",
     )
     args = p.parse_args()
 

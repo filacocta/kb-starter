@@ -1,2 +1,0 @@
-"""kb-feed package."""
-

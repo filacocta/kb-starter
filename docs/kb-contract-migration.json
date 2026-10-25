@@ -1,0 +1,279 @@
+{
+  "replaces_source_revision": "29f4d8620326634074502eb26ce35c1f93ec45a9",
+  "purpose": "Developer migration evidence, not runtime policy or a second rulebook.",
+  "decision": "Keep a short shared write contract and one conditional KB flow per operation. Skills adapt runtime selection instead of duplicating procedure; headless workers consume the same KB flow.",
+  "rules": [
+    {
+      "id": "1",
+      "disposition": "contract",
+      "destination": "knowledgebase/_rules.md",
+      "reason": "ownership and checked writes; preserve human additions"
+    },
+    {
+      "id": "2",
+      "disposition": "replace",
+      "destination": "knowledgebase/AGENTS.md",
+      "reason": "bounded retrieval replaces mandatory global-index sequence"
+    },
+    {
+      "id": "3",
+      "disposition": "contract",
+      "destination": "knowledgebase/_rules.md",
+      "reason": "attribution and distinct project evidence"
+    },
+    {
+      "id": "4",
+      "disposition": "replace",
+      "destination": "knowledgebase/_workflows/ingest.md",
+      "reason": "existing scope persists; no repeated approval menus"
+    },
+    {
+      "id": "5",
+      "disposition": "replace",
+      "destination": "knowledgebase/_workflows/maintenance.md",
+      "reason": "resumable operation records only where needed"
+    },
+    {
+      "id": "6",
+      "disposition": "replace",
+      "destination": "knowledgebase/_workflows/synthesise.md",
+      "reason": "readable maintained articles without page or style quotas"
+    },
+    {
+      "id": "7",
+      "disposition": "replace",
+      "destination": "knowledgebase/_workflows/maintenance.md",
+      "reason": "authorized corrections without automatic chat transcripts"
+    },
+    {
+      "id": "8",
+      "disposition": "contract",
+      "destination": "knowledgebase/_rules.md",
+      "reason": "uncertainty and disagreement without compulsory user adjudication"
+    },
+    {
+      "id": "9",
+      "disposition": "replace",
+      "destination": "knowledgebase/_workflows/ingest.md",
+      "reason": "navigation changes only when needed; one mutation receipt"
+    },
+    {
+      "id": "10",
+      "disposition": "contract",
+      "destination": "knowledgebase/_rules.md",
+      "reason": "preserve records; concrete cleanup scope for disposable outputs"
+    },
+    {
+      "id": "11",
+      "disposition": "enforced",
+      "destination": "knowledgebase/_workflows/maintenance.md",
+      "reason": "immutable publication and governed successor/repair tools; old receipts are historical after byte/path changes"
+    },
+    {
+      "id": "12",
+      "disposition": "remove",
+      "destination": "knowledgebase/_workflows/synthesise.md",
+      "reason": "append-only article accumulation prevents useful maintenance"
+    },
+    {
+      "id": "13",
+      "disposition": "enforced",
+      "destination": "knowledgebase/_workflows/maintenance.md",
+      "reason": "existing guarded queue verbs; no obligatory rabbit-hole backlog"
+    },
+    {
+      "id": "14",
+      "disposition": "replace",
+      "destination": "knowledgebase/_workflows/synthesise.md",
+      "reason": "placement by usefulness rather than source-count permission quotas"
+    },
+    {
+      "id": "14A",
+      "disposition": "enforced",
+      "destination": "knowledgebase/_workflows/maintenance.md",
+      "reason": "existing backlog route preserves capture versus action"
+    },
+    {
+      "id": "15",
+      "disposition": "schema",
+      "destination": "knowledgebase/_schema.md",
+      "reason": "link formats belong in one data reference"
+    },
+    {
+      "id": "16",
+      "disposition": "remove",
+      "destination": "knowledgebase/_workflows/maintenance.md",
+      "reason": "no ambient inbox triage"
+    },
+    {
+      "id": "17",
+      "disposition": "replace",
+      "destination": "knowledgebase/_workflows/synthesise.md",
+      "reason": "useful pages rather than stubs per source"
+    },
+    {
+      "id": "18",
+      "disposition": "replace",
+      "destination": "knowledgebase/_workflows/ingest.md",
+      "reason": "honest failure disposition without compulsory failed-source notes"
+    },
+    {
+      "id": "19",
+      "disposition": "schema",
+      "destination": "knowledgebase/_schema.md",
+      "reason": "outbound links grant no authority"
+    },
+    {
+      "id": "20",
+      "disposition": "remove",
+      "destination": "knowledgebase/_workflows/synthesise.md",
+      "reason": "no unsolicited save workflow"
+    },
+    {
+      "id": "21",
+      "disposition": "replace",
+      "destination": "knowledgebase/_workflows/synthesise.md",
+      "reason": "useful canonical links without global search on every edit"
+    },
+    {
+      "id": "22",
+      "disposition": "replace",
+      "destination": "knowledgebase/_workflows/project.md",
+      "reason": "relevant project context and dated evidence; no blanket Projects-table scan"
+    },
+    {
+      "id": "23",
+      "disposition": "contract",
+      "destination": "knowledgebase/_rules.md",
+      "reason": "human clippings stay untouched; supported ingestion gates still apply"
+    },
+    {
+      "id": "24",
+      "disposition": "remove",
+      "destination": "knowledgebase/_workflows/maintenance.md",
+      "reason": "no synchronous duplicate writing-prompt store unless requested"
+    },
+    {
+      "id": "25",
+      "disposition": "replace",
+      "destination": "knowledgebase/_workflows/project.md",
+      "reason": "requested project/prospect work without routine save offers"
+    },
+    {
+      "id": "26",
+      "disposition": "remove",
+      "destination": "knowledgebase/_workflows/project.md",
+      "reason": "no mandatory catalog at five instances"
+    },
+    {
+      "id": "27",
+      "disposition": "remove",
+      "destination": "knowledgebase/_workflows/project.md",
+      "reason": "no automatic move at ten notes"
+    },
+    {
+      "id": "28",
+      "disposition": "schema",
+      "destination": "knowledgebase/_schema.md",
+      "reason": "truthful board markers; link authoritative task systems"
+    },
+    {
+      "id": "29",
+      "disposition": "enforced",
+      "destination": "knowledgebase/_workflows/media.md",
+      "reason": "canonical versus temporary custody, bounded inspection and explicit cleanup"
+    },
+    {
+      "id": "30",
+      "disposition": "enforced",
+      "destination": "knowledgebase/_workflows/media.md",
+      "reason": "canonical identity and actual transport; no retry/rotation ladder"
+    },
+    {
+      "id": "31",
+      "disposition": "adapter",
+      "destination": "knowledgebase/_workflows/maintenance.md",
+      "reason": "feed authorization/config owns capture; actual desktop feed shares guarded helper boundary"
+    },
+    {
+      "id": "31A",
+      "disposition": "replace",
+      "destination": "knowledgebase/_workflows/synthesise.md",
+      "reason": "capture, approval, publication and incorporation are distinct"
+    },
+    {
+      "id": "32",
+      "disposition": "replace",
+      "destination": "knowledgebase/_workflows/library.md",
+      "reason": "single raw custody copy and preservation of review-bound evidence"
+    },
+    {
+      "id": "33",
+      "disposition": "replace",
+      "destination": "knowledgebase/_workflows/ingest.md",
+      "reason": "optional bounded reference expansion within authorized scope"
+    },
+    {
+      "id": "34",
+      "disposition": "enforced",
+      "destination": "knowledgebase/_workflows/library.md",
+      "reason": "existing book-ledger tools and named acquisition scope"
+    },
+    {
+      "id": "35",
+      "disposition": "replace",
+      "destination": "knowledgebase/_workflows/ingest.md",
+      "reason": "bounded optional recovery and honest limitations"
+    },
+    {
+      "id": "35a",
+      "disposition": "replace",
+      "destination": "knowledgebase/_workflows/ingest.md",
+      "reason": "authorized interactive available access, no forced browser recovery"
+    },
+    {
+      "id": "35b",
+      "disposition": "replace",
+      "destination": "knowledgebase/_workflows/ingest.md",
+      "reason": "archive as a new dated observation when in scope"
+    },
+    {
+      "id": "35c",
+      "disposition": "remove",
+      "destination": "knowledgebase/_workflows/maintenance.md",
+      "reason": "no mandatory infrastructure backlog for blocked fetches"
+    },
+    {
+      "id": "36",
+      "disposition": "replace",
+      "destination": "knowledgebase/_workflows/ingest.md",
+      "reason": "citation discovery is distinct from verifying cited claims"
+    },
+    {
+      "id": "37",
+      "disposition": "replace",
+      "destination": "knowledgebase/_workflows/ingest.md",
+      "reason": "defensive evidence is not executable instruction"
+    },
+    {
+      "id": "38",
+      "disposition": "enforced",
+      "destination": "knowledgebase/_workflows/ingest.md",
+      "reason": "candidate validation, independent exact-byte review and guarded publication"
+    }
+  ],
+  "additional_obligations": {
+    "model_roles": "Current instructions and the Personal deployment runbook, never portable schema defaults",
+    "synthesis": "Article flow owns evidence and optional actions; universal plan/checkpoint/ledger duplication removed",
+    "media": "Media flow and data schema preserve bounded capture, same-input review, non-retention and exact cleanup exceptions"
+  },
+  "open_item_dispositions": {
+    "rulebook_reconciliation": "all numbered rules and additions accounted for",
+    "pdf_scheduler_mismatch": "documented actual URL-only selector; unsupported local-file ADD is not invented",
+    "live_starter_drift": "obsolete root defaults corrected; two concrete publisher/evidence guard changes ported, no blanket overwrite",
+    "feed_guard_warning": "auditor inspected bundled historical snapshot; actual desktop feed already uses shared guard, verified directly",
+    "work_duplicates": "retain both, no consolidation approved; 77 exact pairs including73Markdown recorded by hash",
+    "work_metadata": "48 gaps grandfathered; no cosmetic migration",
+    "source_quality": "retrieval and publication preserve scope; historical factual correctness is not certified by structural checks"
+  }
+}

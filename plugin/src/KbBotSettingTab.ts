@@ -28,10 +28,10 @@ export class KbBotSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Model")
-			.setDesc("Claude model ID to use for responses.")
+			.setDesc("An available Anthropic model ID for your account. No model is selected automatically.")
 			.addText(text =>
 				text
-					.setPlaceholder("claude-sonnet-4-6")
+					.setPlaceholder("Enter your available model ID")
 					.setValue(this.plugin.settings.model)
 					.onChange(async value => {
 						this.plugin.settings.model = value;

@@ -1,0 +1,34 @@
+{
+  "version": "2.2.0",
+  "skills": [
+    "kb-query",
+    "kb-ingest",
+    "kb-synthesise",
+    "kb-project",
+    "kb-audit"
+  ],
+  "tools": [
+    "kb-search",
+    "kb_config.py",
+    "kb_retrieval.py",
+    "kb-audit",
+    "kb_contract_spec.json"
+  ],
+  "retired": [
+    "kb-ask",
+    "kb-scan",
+    "kb-queue",
+    "kb-wrap",
+    "kb-project-init",
+    "kb-lint",
+    "kb-relink",
+    "cswap"
+  ],
+  "internal": [
+    "kb-auto"
+  ],
+  "adjuncts": [
+    "book-to-skill",
+    "coverage-audit"
+  ]
+}

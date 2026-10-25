@@ -1,6 +1,15 @@
 import { describe, it } from "node:test";
 import { expect } from "expect";
-import { buildPrompt, formatAsCallout } from "../src/api";
+import { askClaude, buildPrompt, formatAsCallout } from "../src/api";
+import { DEFAULT_SETTINGS } from "../src/constants";
+
+describe("explicit model selection", () => {
+	it("has no prescribed model and rejects unconfigured calls before networking", async () => {
+		expect(DEFAULT_SETTINGS.model).toBe("");
+		await expect(askClaude("test", DEFAULT_SETTINGS)).rejects.toThrow("Configure");
+		await expect(askClaude("test", { ...DEFAULT_SETTINGS, apiKey: "example-key" })).rejects.toThrow("Configure");
+	});
+});
 
 describe("buildPrompt", () => {
 	it("returns the question alone when there is no selected text", () => {

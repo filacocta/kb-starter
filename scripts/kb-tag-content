@@ -1,143 +1,254 @@
-#!/usr/bin/env bash
-# kb-tag-content — dispatch Gemini CLI agents to add content tags to KB stubs.
-#
-# Finds stubs with ≤3 tags (structural-only) across KB topics, then dispatches
-# Gemini agents (max 2 in parallel, per AG-2) to enrich them.
-#
-# Usage:
-#   kb-tag-content                    # process all topics (2 at a time)
-#   kb-tag-content --topic slug       # single topic
-#   kb-tag-content --dry-run          # list targets without dispatching
-#
-# Requires: gemini CLI on PATH, ~/.claude/kb-config.md with KB_ROOT
+#!/bin/sh
+'''exec' python3 "$0" "$@"
+' '''
+"""Build a read-only handoff plan for content-tagging KB stubs.
 
-set -euo pipefail
+This command inventories eligible notes and prints a bounded plan for the
+user's active agent harness to review.  It never edits the KB, starts a model,
+selects a provider, or invokes another CLI.  A note is eligible only when it
+is an exact ``author: kb-bot`` note, has a non-source type, contains the
+standard stub marker, and has at most three structural tags.
 
-AGENT_PROFILE="$HOME/.claude/skills/kb-tag-content/agent-profile.md"
-if [[ ! -f "$AGENT_PROFILE" ]]; then
-    # fallback: relative to kb-starter checkout
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    AGENT_PROFILE="$(dirname "$SCRIPT_DIR")/skills/kb-tag-content/agent-profile.md"
-fi
+Usage:
+  kb-tag-content                         plan all topic stubs
+  kb-tag-content --topic cellular-automata
+  kb-tag-content --json                   machine-readable handoff packet
+  kb-tag-content --limit 50               cap the printed candidate list
 
-# Read KB_ROOT from config
-KB_ROOT=""
-if [[ -f ~/.claude/kb-config.md ]]; then
-    KB_ROOT=$(grep -E '^KB_ROOT[: =]' ~/.claude/kb-config.md | head -1 | sed 's/^KB_ROOT[: =]*//' | tr -d '"'"'"' ')
-fi
-if [[ -z "$KB_ROOT" ]]; then
-    KB_ROOT="${KB_ROOT:-$HOME/Documents/vault/knowledgebase}"
-fi
-if [[ ! -d "$KB_ROOT" ]]; then
-    echo "error: KB not found at $KB_ROOT" >&2
-    exit 2
-fi
+``--dry-run`` is retained as a compatibility alias; planning is always
+read-only now.
+"""
 
-TOPIC_ARG=""
-DRY_RUN=0
-
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --topic) TOPIC_ARG="$2"; shift 2 ;;
-        --dry-run) DRY_RUN=1; shift ;;
-        *) echo "Unknown arg: $1" >&2; exit 1 ;;
-    esac
-done
-
-# Find topics that have structural-only stubs
-find_stub_topics() {
-    KB_ROOT_ARG="$1"
-    python3 - "$KB_ROOT_ARG" << 'PYEOF'
-import re, yaml
-from pathlib import Path
+import argparse
+import json
+import os
+import re
 import sys
+from dataclasses import asdict, dataclass
+from pathlib import Path
 
-KB = Path(sys.argv[1])
-FM_RE = re.compile(r'^---\s*\n(.*?)\n---\s*\n', re.DOTALL)
+import yaml
 
-STRUCTURAL = {'entity','concept','synthesis','source','note','reference','summary',
-              'impl-plan','meta','catalog','index','person','place','game','text',
-              'organization','organisation','software','event','creature','artifact',
-              'tool','book','project'}
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
 
-topics = {}
-for md in (KB / "topics").rglob("*.md"):
-    rel = str(md.relative_to(KB))
-    if any(p in rel for p in ['_','sources/','reading-list']):
-        continue
+from kb_config import (  # noqa: E402
+    KBConfigError,
+    iter_markdown,
+    read_regular_text,
+    resolve_kb_root,
+    validate_topic_slug,
+)
+
+
+FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+SKIP_FILENAMES = {
+    "_index.md",
+    "_summary.md",
+    "_checkpoint.md",
+    "_schema.md",
+    "_rules.md",
+    "_dive-queue.md",
+    "_todo.md",
+    "_log.md",
+    "reading-list.md",
+    "LINKS.md",
+    "README.md",
+}
+SKIP_DIR_PARTS = {".obsidian", ".git", ".trash", "bases", "sources"}
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """Keep malformed or duplicate metadata out of the handoff plan."""
+
+    def construct_mapping(self, node, deep=False):  # type: ignore[override]
+        mapping = {}
+        for key_node, value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if key in mapping:
+                raise yaml.constructor.ConstructorError(
+                    "while constructing a mapping",
+                    node.start_mark,
+                    f"found duplicate key {key!r}",
+                    key_node.start_mark,
+                )
+            mapping[key] = self.construct_object(value_node, deep=deep)
+        return mapping
+
+
+@dataclass(frozen=True)
+class Candidate:
+    path: str
+    topic: str
+    title: str
+    note_type: str
+    tags: list[str]
+    reason: str
+
+
+def parse_frontmatter(text: str) -> tuple[dict, str] | None:
+    match = FRONTMATTER_RE.match(text)
+    if match is None:
+        return None
     try:
-        text = md.read_text()
-        if 'This is a stub' not in text: continue
-        m = FM_RE.match(text)
-        if not m: continue
-        fm = yaml.safe_load(m.group(1)) or {}
-        tags = fm.get('tags', [])
-        if not isinstance(tags, list): continue
-        if len(tags) > 3: continue  # already content-tagged
-        topic = str(md.relative_to(KB)).split('/')[1]
-        topics.setdefault(topic, 0)
-        topics[topic] += 1
-    except: pass
+        metadata = yaml.load(match.group(1), Loader=_UniqueKeyLoader) or {}
+    except yaml.YAMLError:
+        return None
+    if not isinstance(metadata, dict):
+        return None
+    return metadata, text[match.end():]
 
-for t, n in sorted(topics.items(), key=lambda x: -x[1]):
-    print(f"{t}\t{n}")
-PYEOF
-}
 
-if [[ -n "$TOPIC_ARG" ]]; then
-    TOPICS=("$TOPIC_ARG")
-else
-    mapfile -t TOPICS < <(find_stub_topics "$KB_ROOT" 2>/dev/null | cut -f1)
-fi
+def _topic_dirs(root: Path, topic: str | None) -> list[str]:
+    topics_dir = root / "topics"
+    if topic is not None:
+        validate_topic_slug(topic, root)
+        return [(Path("topics") / topic).as_posix()]
+    if not topics_dir.is_dir() or topics_dir.is_symlink():
+        return []
+    names: list[str] = []
+    for entry in sorted(topics_dir.iterdir(), key=lambda item: item.name):
+        if entry.name.startswith(".") or entry.is_symlink() or not entry.is_dir():
+            continue
+        names.append(entry.name)
+    return [(Path("topics") / name).as_posix() for name in names]
 
-if [[ "${#TOPICS[@]}" -eq 0 ]]; then
-    echo "No topics with structural-only stubs found."
-    exit 0
-fi
 
-echo "Topics to process: ${#TOPICS[@]}"
-for t in "${TOPICS[@]}"; do
-    count=$(find_stub_topics "$KB_ROOT" 2>/dev/null | grep "^${t}" | cut -f2 || echo 0)
-    echo "  $t ($count stubs)"
-done
+def _is_candidate(path: Path, root: Path) -> Candidate | None:
+    relative = path.relative_to(root)
+    if (
+        path.name in SKIP_FILENAMES
+        or path.name.startswith("_")
+        or any(part in SKIP_DIR_PARTS for part in relative.parts)
+        or len(relative.parts) < 3
+        or relative.parts[0] != "topics"
+    ):
+        return None
+    try:
+        parsed = parse_frontmatter(read_regular_text(path))
+    except (KBConfigError, OSError):
+        return None
+    if parsed is None:
+        return None
+    metadata, body = parsed
+    if metadata.get("author") != "kb-bot":
+        return None
+    note_type = str(metadata.get("type", "")).strip()
+    if not note_type or note_type.lower() == "source":
+        return None
+    if "This is a stub" not in body:
+        return None
+    raw_tags = metadata.get("tags", [])
+    if raw_tags is None:
+        raw_tags = []
+    if not isinstance(raw_tags, list):
+        return None
+    if any(isinstance(tag, (dict, list, tuple, set)) for tag in raw_tags):
+        return None
+    tags = [str(tag).strip() for tag in raw_tags if str(tag).strip()]
+    if len(tags) > 3:
+        return None
+    topic = str(metadata.get("topic", "")).strip() or relative.parts[1]
+    title = str(metadata.get("title", "")).strip() or path.stem.replace("-", " ").title()
+    return Candidate(
+        path=relative.as_posix(),
+        topic=topic,
+        title=title,
+        note_type=note_type,
+        tags=tags,
+        reason="stub with structural-only tags; review content tags in active harness",
+    )
 
-if [[ $DRY_RUN -eq 1 ]]; then
-    echo "(dry-run — not dispatching)"
-    exit 0
-fi
 
-# Dispatch in pairs (AG-2: max 2 concurrent)
-dispatch_topic() {
-    local topic="$1"
-    echo "→ Dispatching Gemini agent for topic: $topic"
-    local prompt
-    prompt="$(cat "$AGENT_PROFILE")
+def find_candidates(root: Path, topic: str | None = None) -> list[Candidate]:
+    candidates: list[Candidate] = []
+    for relative_dir in _topic_dirs(root, topic):
+        for path in iter_markdown(root, (relative_dir,)):
+            candidate = _is_candidate(path, root)
+            if candidate is not None:
+                candidates.append(candidate)
+    candidates.sort(key=lambda candidate: (candidate.topic, candidate.path))
+    return candidates
 
-TOPIC=$topic
-KB_ROOT=$KB_ROOT"
-    cd "$KB_ROOT" && gemini --yolo --output-format text -p "$prompt" &
-    echo "  [PID $!] $topic"
-}
 
-i=0
-pids=()
-for topic in "${TOPICS[@]}"; do
-    dispatch_topic "$topic"
-    pids+=($!)
-    ((i++))
-    if (( i % 2 == 0 )); then
-        echo "  (waiting for pair to finish before next pair…)"
-        wait "${pids[-2]}" "${pids[-1]}" 2>/dev/null || true
-        echo "  (sleeping 8s between pairs)"
-        sleep 8
-    fi
-done
+def _active_harness() -> str:
+    configured = os.environ.get("KB_AGENT", "").strip().lower()
+    return configured if configured in {"claude", "codex"} else "your active harness"
 
-# Wait for any remaining
-wait "${pids[@]}" 2>/dev/null || true
-echo ""
-echo "All Gemini agents complete."
 
-# Refresh the frontmatter cache so kb-search stays current
-echo "Refreshing kb-index cache…"
-kb-index --update 2>&1 | grep -v "^$" || true
+def render_text(root: Path, candidates: list[Candidate], *, topic: str | None,
+                limit: int, dry_run: bool) -> str:
+    shown = candidates[:limit] if limit > 0 else candidates
+    harness = _active_harness()
+    lines = [
+        "KB content-tagging plan (read-only)",
+        f"Candidates: {len(candidates)}" + (f"; showing {len(shown)}" if len(shown) != len(candidates) else ""),
+        "",
+        "Handoff: review the candidates below in " + harness + ".",
+        "This command does not edit notes or invoke a model, provider, or external CLI.",
+    ]
+    if topic:
+        lines.append(f"Scope: topic {topic}")
+    if dry_run:
+        lines.append("Compatibility flag --dry-run accepted; planning is always read-only.")
+    lines.extend(["", "Candidates:"])
+    if not shown:
+        lines.append("(none)")
+    else:
+        for candidate in shown:
+            tags = ", ".join(candidate.tags) or "(none)"
+            lines.append(f"- `{candidate.path}` — {candidate.title}")
+            lines.append(f"  topic: {candidate.topic}; type: {candidate.note_type}; tags: {tags}")
+            lines.append(f"  reason: {candidate.reason}")
+    if len(shown) < len(candidates):
+        lines.append(f"… {len(candidates) - len(shown)} more; increase --limit to include them.")
+    return "\n".join(lines)
+
+
+def render_json(root: Path, candidates: list[Candidate], *, topic: str | None,
+                limit: int) -> str:
+    shown = candidates[:limit] if limit > 0 else candidates
+    return json.dumps(
+        {
+            "read_only": True,
+            "kb_root": str(root),
+            "scope_topic": topic,
+            "active_harness": _active_harness(),
+            "handoff": "Review these candidates in the active harness; no model/provider/CLI was invoked.",
+            "candidate_count": len(candidates),
+            "candidates": [asdict(candidate) for candidate in shown],
+        },
+        indent=2,
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--topic", help="restrict the plan to one validated topic slug")
+    parser.add_argument("--kb-root", default=None, help="explicit KB root")
+    parser.add_argument("--limit", type=int, default=0, help="maximum candidates to print (0 = all)")
+    parser.add_argument("--json", action="store_true", help="emit JSON handoff packet")
+    parser.add_argument("--dry-run", action="store_true", help="compatibility alias; plan is always read-only")
+    args = parser.parse_args()
+    if args.limit < 0:
+        parser.error("--limit must be zero or greater")
+
+    try:
+        root = resolve_kb_root(args.kb_root)
+        candidates = find_candidates(root, args.topic)
+    except KBConfigError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(render_json(root, candidates, topic=args.topic, limit=args.limit))
+    else:
+        print(render_text(root, candidates, topic=args.topic, limit=args.limit, dry_run=args.dry_run))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

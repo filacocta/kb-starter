@@ -1,0 +1,21 @@
+{
+  "source_revision": "135e7eb975b44e28dd8c9a1afdd1cc44b5a0fe73",
+  "files": {
+    "kb-ask/SKILL.md": "5141587c4665d3dd500ea18a1a384a5429981b6f1c0f1e23fb6f5abb590a7a7b",
+    "kb-ask/references/kb-core.md": "9f2afcb49a8074cbcba7fddeb9f47957804000177e913429f4b6b400da41adc9",
+    "kb-scan/SKILL.md": "3fa6cf058233bc18e942e9bdaeb537a3c542b078b62132e3c1f266579bb02eac",
+    "kb-scan/references/kb-core.md": "9f2afcb49a8074cbcba7fddeb9f47957804000177e913429f4b6b400da41adc9",
+    "kb-wrap/SKILL.md": "7b28c014dcf590e361ea330867295141a22c2d44d93f7fc92b20ac99759b24c7",
+    "kb-wrap/references/kb-core.md": "9f2afcb49a8074cbcba7fddeb9f47957804000177e913429f4b6b400da41adc9",
+    "kb-queue/SKILL.md": "74bb972737915bff9980ff62852716da71b84e9f59b8f5c4c3ba4297d7064206",
+    "kb-queue/references/kb-core.md": "9f2afcb49a8074cbcba7fddeb9f47957804000177e913429f4b6b400da41adc9",
+    "kb-project-init/SKILL.md": "c6a39624ed4595097e1f81aa5d8b985ca23fcc7cf1b0ac72ff1d045ceb2e3dd7",
+    "kb-project-init/references/kb-core.md": "9f2afcb49a8074cbcba7fddeb9f47957804000177e913429f4b6b400da41adc9",
+    "kb-lint/SKILL.md": "f28966f0006095baad024eef6f99c61ff8f196465152c2d0b0863005558eb9c5",
+    "kb-lint/references/kb-core.md": "9f2afcb49a8074cbcba7fddeb9f47957804000177e913429f4b6b400da41adc9",
+    "kb-relink/SKILL.md": "d0c84ff1ae7767b92e13e3221305d0c2ee8df21903d1bddd80eda374553b66ad",
+    "kb-relink/references/kb-core.md": "9f2afcb49a8074cbcba7fddeb9f47957804000177e913429f4b6b400da41adc9",
+    "kb-auto/SKILL.md": "0823cad78eb7f94558c30c290b226a01feaa50504451ee6f71591289d8d9ae33",
+    "kb-auto/references/kb-core.md": "9f2afcb49a8074cbcba7fddeb9f47957804000177e913429f4b6b400da41adc9"
+  }
+}

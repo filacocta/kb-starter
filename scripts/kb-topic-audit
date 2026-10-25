@@ -40,20 +40,32 @@ Exit codes:
     1 = candidates found (not errors — just suggestions)
 
 Env:
-    KB_ROOT  Override KB path. Default: reads ~/.claude/kb-config.md or
-             ~/Documents/vault/knowledgebase
+    KB_ROOT  Explicit KB path. KB_CONFIG/KB_CONFIG_PATH and the selected
+             agent's supported config are also accepted; an unconfigured or
+             ambiguous root is an error.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import math
-import os
 import re
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from kb_config import (  # noqa: E402
+    KBConfigError,
+    iter_markdown,
+    read_regular_text,
+    resolve_kb_root,
+    validate_topic_slug,
+)
 
 WIKILINK_RE = re.compile(r"!?\[\[([^\]\n|]+)(?:\|[^\]\n]+)?\]\]")
 FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
@@ -71,25 +83,6 @@ INFRA_PATTERNS = ("_Index_of_",)
 
 
 # ---------------------------------------------------------------------------
-# KB root resolution (mirrors kb-lint)
-# ---------------------------------------------------------------------------
-
-def resolve_kb_root() -> Path:
-    env_val = os.environ.get("KB_ROOT")
-    if env_val:
-        return Path(os.path.expanduser(env_val)).resolve()
-    kb_config = Path.home() / ".claude/kb-config.md"
-    if kb_config.exists():
-        for line in kb_config.read_text().splitlines():
-            line = line.strip()
-            if line.startswith("KB_ROOT:") or line.startswith("KB_ROOT="):
-                val = (line.split(":", 1)[-1] if ":" in line else line.split("=", 1)[-1])
-                val = val.strip().strip('"').strip("'")
-                if val:
-                    return Path(os.path.expanduser(val)).resolve()
-    return (Path.home() / "Documents/vault/knowledgebase").resolve()
-
-
 # ---------------------------------------------------------------------------
 # Frontmatter parser (mirrors kb-lint — no pyyaml dependency)
 # ---------------------------------------------------------------------------
@@ -176,39 +169,34 @@ def _topic_from_path(rel: str) -> str:
 
 def load_all_notes(root: Path, topic_filter: str | None = None) -> list[FileMeta]:
     metas: list[FileMeta] = []
-    base = root / "topics" / topic_filter if topic_filter else root / "topics"
-    if not base.is_dir():
-        return metas
-    for dirpath, dirnames, filenames in os.walk(base, followlinks=True):
-        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
-        for fn in filenames:
-            if not fn.endswith(".md"):
-                continue
-            p = Path(dirpath) / fn
-            rel = p.relative_to(root).as_posix()
-            if _is_infra(rel):
-                continue
-            try:
-                text = p.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            fm, body = parse_frontmatter(text)
-            tags_raw = fm.get("tags", [])
-            if isinstance(tags_raw, str):
-                tags_raw = [tags_raw]
-            tags = [t.strip().strip('"').strip("'").lower() for t in tags_raw if t]
-            fm_topic = str(fm.get("topic", "")).strip()
-            inferred_topic = _topic_from_path(rel)
-            topic = fm_topic or inferred_topic
-            metas.append(FileMeta(
-                path=p,
-                rel=rel,
-                topic=topic,
-                fm_topic=fm_topic,
-                tags=tags,
-                note_type=str(fm.get("type", "")).strip(),
-                body=body,
-            ))
+    relative_dirs = ((Path("topics") / topic_filter).as_posix(),) if topic_filter else ("topics",)
+    for p in iter_markdown(root, relative_dirs):
+        rel = p.relative_to(root).as_posix()
+        if _is_infra(rel):
+            continue
+        try:
+            text = read_regular_text(p)
+        except (KBConfigError, OSError):
+            continue
+        fm, body = parse_frontmatter(text)
+        tags_raw = fm.get("tags", [])
+        if isinstance(tags_raw, str):
+            tags_raw = [tags_raw]
+        if not isinstance(tags_raw, list):
+            tags_raw = []
+        tags = [t.strip().strip('"').strip("'").lower() for t in tags_raw if t]
+        fm_topic = str(fm.get("topic", "")).strip()
+        inferred_topic = _topic_from_path(rel)
+        topic = fm_topic or inferred_topic
+        metas.append(FileMeta(
+            path=p,
+            rel=rel,
+            topic=topic,
+            fm_topic=fm_topic,
+            tags=tags,
+            note_type=str(fm.get("type", "")).strip(),
+            body=body,
+        ))
     return metas
 
 
@@ -222,15 +210,15 @@ def build_topic_profiles(root: Path, all_notes: list[FileMeta]) -> dict[str, set
 
     # Pull tags from _summary.md for each topic
     topics_dir = root / "topics"
-    if topics_dir.is_dir():
+    if topics_dir.is_dir() and not topics_dir.is_symlink():
         for t_dir in topics_dir.iterdir():
-            if not t_dir.is_dir() or t_dir.name.startswith("."):
+            if not t_dir.is_dir() or t_dir.is_symlink() or t_dir.name.startswith("."):
                 continue
             summary = t_dir / "_summary.md"
             if summary.is_file():
                 try:
-                    text = summary.read_text(encoding="utf-8", errors="replace")
-                except OSError:
+                    text = read_regular_text(summary)
+                except (KBConfigError, OSError):
                     continue
                 fm, _ = parse_frontmatter(text)
                 tags_raw = fm.get("tags", [])
@@ -588,6 +576,7 @@ def main() -> int:
                    help="min IDF score gap to flag in forward mode (default 0.2)")
     p.add_argument("--min-links", type=int, default=2, metavar="N",
                    help="min cross-topic inbound links for reverse mode (default 2)")
+    p.add_argument("--kb-root", default=None, help="explicit KB root")
 
     fmt = p.add_mutually_exclusive_group()
     fmt.add_argument("--json", action="store_true")
@@ -598,24 +587,44 @@ def main() -> int:
     do_forward = args.forward or (not args.forward and not args.reverse)
     do_reverse = args.reverse or (not args.forward and not args.reverse)
 
-    root = resolve_kb_root()
-    if not root.is_dir():
-        print(f"kb-topic-audit: KB root not found: {root}", file=sys.stderr)
+    try:
+        root = resolve_kb_root(args.kb_root)
+        if args.topic:
+            validate_topic_slug(args.topic, root)
+    except KBConfigError as exc:
+        print(f"kb-topic-audit: {exc}", file=sys.stderr)
         return 2
 
-    all_notes = load_all_notes(root, args.topic)
+    try:
+        all_notes = load_all_notes(root, args.topic)
+    except (KBConfigError, OSError) as exc:
+        print(f"kb-topic-audit: cannot scan KB: {exc}", file=sys.stderr)
+        return 2
     if not all_notes:
         print("kb-topic-audit: no notes found.", file=sys.stderr)
         return 0
 
     # Build profiles from all topics (not scoped, even if --topic is set,
     # so scoring is always against the full topic taxonomy)
-    all_notes_full = load_all_notes(root) if args.topic else all_notes
+    if args.topic:
+        try:
+            all_notes_full = load_all_notes(root)
+        except (KBConfigError, OSError) as exc:
+            print(f"kb-topic-audit: cannot scan KB: {exc}", file=sys.stderr)
+            return 2
+    else:
+        all_notes_full = all_notes
     profiles = build_topic_profiles(root, all_notes_full)
     idf = compute_idf(profiles)
 
     topics_dir = root / "topics"
-    total_topics = sum(1 for t in topics_dir.iterdir() if t.is_dir() and not t.name.startswith(".")) if topics_dir.is_dir() else 0
+    total_topics = (
+        sum(
+            1 for t in topics_dir.iterdir()
+            if t.is_dir() and not t.is_symlink() and not t.name.startswith(".")
+        )
+        if topics_dir.is_dir() and not topics_dir.is_symlink() else 0
+    )
 
     forward_results: list[ForwardCandidate] | None = None
     reverse_results: list[ReverseCandidate] | None = None

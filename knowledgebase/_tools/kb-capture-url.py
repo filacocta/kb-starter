@@ -1,80 +1,164 @@
 #!/usr/bin/env python3
 """Capture a URL into the KB inbox with agent/session provenance.
 
-Routing (see _schema.md "Topic Reading Lists" + CLAUDE.md capture policy):
+Routing (see _schema.md "Topic Reading Lists" + the capture policy):
   --topic <slug> given AND topics/<slug>/reading-list.md exists -> append under that
       topic's `## Pending` section.
-  otherwise -> append to readinglist/Links.md (the same global inbox the Telegram
-      #unfiltered lane uses).
+  no --topic -> append to readinglist/Links.md. An explicitly requested topic must exist and pass
+      the queue guard; it never silently falls back to the global inbox.
 
-Provenance is tagged so agent-captured URLs are traceable and distinct from
-Telegram-captured ones:  (via agent <name>, session <id>, YYYY-MM-DD)
-vs Telegram's            (via Telegram #unfiltered, YYYY-MM-DD)
+Provenance records the capturing agent and session:
+  (via agent <name>, session <id>, YYYY-MM-DD)
 
 Dedups against already-ingested sources (kb-seen.py) and against an exact existing
-line. Holds the shared .kb-write.lock so it never races kb-feed / kb-checkoff.
+line. Queue writers share .kb-write.lock with kb-checkoff.
 
 Usage:
-  kb-capture-url.py <url> --source "agent claude" [--session <id>] [--topic <slug>] [--note "<why>"]
+  kb-capture-url.py <url> --source "agent" [--session <id>] [--topic <slug>] [--note "<why>"]
 """
 from __future__ import annotations
 
 import argparse
 import fcntl
+import importlib.util
 import json
 import os
 import re
 import subprocess
 import sys
+import tempfile
 from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
+from urllib.parse import urlsplit
+
+import yaml
 
 FRONTMATTER_RE = re.compile(r"\A---\n(?P<body>.*?)\n---\n", re.DOTALL)
-LEVEL_2_RE = re.compile(r"^##\s+(?P<title>.+?)\s*$")
-DEFAULT_KB_ROOT = Path("~/Vault/knowledgebase").expanduser()
+TOPIC_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+HTTP_LOOKING_RE = re.compile(r"^https?(?::|/)", re.IGNORECASE)
+HTTP_SCHEME_RE = re.compile(r"^https?://", re.IGNORECASE)
+LOCK_NAME = ".kb-write.lock"
+DEFAULT_KB_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _load_write_guard():
+    """Load the hyphenated shared guard without requiring a package install."""
+    key = "_kb_write_guard"
+    module = sys.modules.get(key)
+    if module is not None:
+        return module
+    spec = importlib.util.spec_from_file_location(key, Path(__file__).with_name("kb-write-guard.py"))
+    if spec is None or spec.loader is None:
+        raise ImportError("cannot load kb-write-guard.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[key] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_write_guard = _load_write_guard()
+
+
+def queue_parser():
+    key = "kb_capture_queue_parser"
+    if key not in sys.modules:
+        spec = importlib.util.spec_from_file_location(key, Path(__file__).with_name("kb-queue-parse.py"))
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[key] = module
+        spec.loader.exec_module(module)
+    return sys.modules[key]
+
+
+class DedupError(RuntimeError):
+    """The required ingestion-level dedup check did not complete safely."""
+
+
+def url_whitespace_or_control(value: str) -> bool:
+    return any(character.isspace() or ord(character) < 32 or ord(character) == 127 for character in value)
+
+
+def http_url_error(url: str) -> str | None:
+    """Return an error for HTTP-looking malformed URLs, or None if valid/unhandled."""
+    if not HTTP_LOOKING_RE.match(url):
+        return None
+    if url_whitespace_or_control(url):
+        return "URL must not contain whitespace or control characters"
+    if not HTTP_SCHEME_RE.match(url):
+        return "URL must use an http:// or https:// scheme"
+    try:
+        parsed = urlsplit(url)
+        hostname = parsed.hostname
+        _ = parsed.port
+    except ValueError:
+        return "URL has an invalid HTTP host"
+    if not parsed.netloc or not hostname:
+        return "URL must include a host"
+    return None
 
 
 @contextmanager
 def kb_write_lock(kb_root: Path):
-    lock_path = kb_root / ".kb-write.lock"
-    with lock_path.open("a+", encoding="utf-8") as fh:
-        try:
-            fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            sys.exit("kb-capture-url: another KB writer holds .kb-write.lock; try again shortly.")
-        try:
-            yield
-        finally:
-            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+    manager = _write_guard.write_lock(kb_root, nonblocking=True)
+    try:
+        manager.__enter__()
+    except _write_guard.LockBusyError as exc:
+        raise SystemExit(
+            "kb-capture-url: another KB writer holds .kb-write.lock; try again shortly."
+        ) from exc
+    except (OSError, _write_guard.WriteGuardError) as exc:
+        raise SystemExit(f"kb-capture-url: invalid KB lock path: {exc}") from exc
+    try:
+        yield
+    except BaseException:
+        manager.__exit__(*sys.exc_info())
+        raise
+    else:
+        manager.__exit__(None, None, None)
 
 
-def assert_kb_bot(path: Path) -> None:
-    text = path.read_text(encoding="utf-8")
-    m = FRONTMATTER_RE.match(text)
-    if not m or not re.search(r"^author:\s*kb-bot\s*$", m.group("body"), re.MULTILINE):
-        sys.exit(f"kb-capture-url: {path} is not kb-bot authored; refusing to write (Rule 1).")
+def guarded_text(path: Path, kb_root: Path) -> str:
+    """Compatibility wrapper around the shared canonical queue guard."""
+    return _write_guard.guarded_text(path, kb_root)
+
+
+def has_exact_queue_url(text: str, url: str) -> bool:
+    """Return whether a queue row contains exactly *url* as its URL token."""
+    return any(row.locator == url for row in queue_parser().parse_queue(text).rows)
 
 
 def already_ingested(kb_root: Path, url: str) -> str | None:
     seen = kb_root / "_tools" / "kb-seen.py"
-    if not seen.exists():
-        return None
+    if not seen.is_file() or seen.is_symlink():
+        raise DedupError(f"dedup helper unavailable: {seen}")
     try:
-        res = subprocess.run([sys.executable, str(seen), "--check", url],
-                             capture_output=True, text=True, timeout=20)
-    except (OSError, subprocess.TimeoutExpired):
-        return None
+        res = subprocess.run(
+            [sys.executable, str(seen), "--kb-root", str(kb_root), "--check", url],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise DedupError(f"dedup check failed: {exc}") from exc
+    if res.returncode != 0:
+        raise DedupError(f"dedup check exited with status {res.returncode}")
     # kb-seen emits JSON: {"ingested": {"<url>": <source-note-path or null>}}.
     # A null value means NOT ingested; a path string means already ingested.
     try:
-        data = json.loads(res.stdout or "{}")
-    except (json.JSONDecodeError, ValueError):
+        data = json.loads(res.stdout or "")
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        raise DedupError("dedup check returned invalid JSON") from exc
+    if not isinstance(data, dict) or set(data) != {"ingested"} or not isinstance(data.get("ingested"), dict):
+        raise DedupError("dedup check returned an invalid result shape")
+    ingested = data["ingested"]
+    if set(ingested) != {url}:
+        raise DedupError("dedup check did not report the requested URL")
+    value = ingested[url]
+    if value is None:
         return None
-    for value in (data.get("ingested") or {}).values():
-        if isinstance(value, str) and value.strip():
-            return value
-    return None
+    if isinstance(value, str) and value.strip():
+        return value
+    raise DedupError("dedup check returned an invalid source-note path")
 
 
 def update_modified(text: str, today: date) -> str:
@@ -91,58 +175,81 @@ def update_modified(text: str, today: date) -> str:
 
 
 def atomic_write(path: Path, text: str) -> None:
-    tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    """Compatibility wrapper around the shared mode-preserving writer."""
+    _write_guard.atomic_write(path, text, prefix=".kb-capture-")
+
+
+def validate_inserted_row(text: str, line: str, section: str | None = None) -> None:
+    parsed = queue_parser().parse_queue(text)
+    if parsed.errors or sum(row.raw == line and (section is None or row.section == section)
+                            for row in parsed.rows) != 1:
+        raise ValueError("capture text does not produce one real queue row in its intended section")
 
 
 def append_under_pending(path: Path, line: str, url: str, today: date) -> bool:
     """Insert under `## Pending`, before the next level-2 heading."""
-    text = path.read_text(encoding="utf-8")
-    if line in text.splitlines() or url in text:
+    if any("\n" in value or "\r" in value for value in (line, url)):
+        raise ValueError("queue arguments must be single-line")
+    text = _write_guard.regular_text(path)
+    insert_at = queue_parser().section_insert_index(text, "Pending")
+    if insert_at is None:
+        raise ValueError(f"{path} has no canonical Pending section")
+    if has_exact_queue_url(text, url):
         return False
-    lines = text.splitlines()
-    pending_idx = next((i for i, ln in enumerate(lines)
-                        if (t := LEVEL_2_RE.match(ln)) and t.group("title").strip().lower() == "pending"), None)
-    if pending_idx is None:
-        sys.exit(f"kb-capture-url: {path} has no '## Pending' section (run kb-lint; topics should have the ladder).")
-    insert_at = len(lines)
-    for i in range(pending_idx + 1, len(lines)):
-        if LEVEL_2_RE.match(lines[i]):
-            insert_at = i
-            break
-    while insert_at > pending_idx + 1 and lines[insert_at - 1] == "":
-        insert_at -= 1
-    lines.insert(insert_at, line)
-    atomic_write(path, update_modified("\n".join(lines) + "\n", today))
+    lines = text.splitlines(keepends=True)
+    if insert_at and not lines[insert_at - 1].endswith("\n"):
+        lines[insert_at - 1] += "\n"
+    lines.insert(insert_at, line + "\n")
+    updated = update_modified("".join(lines), today)
+    validate_inserted_row(updated, line, "Pending")
+    atomic_write(path, updated)
     return True
 
 
 def append_to_end(path: Path, line: str, url: str, today: date) -> bool:
-    text = path.read_text(encoding="utf-8")
-    if line in text.splitlines() or url in text:
+    if any("\n" in value or "\r" in value for value in (line, url)):
+        raise ValueError("queue arguments must be single-line")
+    text = _write_guard.regular_text(path)
+    parsed = queue_parser().parse_queue(text)
+    if parsed.errors:
+        raise ValueError("unsafe inbox structure: " + "; ".join(parsed.errors))
+    if has_exact_queue_url(text, url):
         return False
     lines = text.splitlines()
     while lines and lines[-1] == "":
         lines.pop()
     lines.append(line)
-    atomic_write(path, update_modified("\n".join(lines) + "\n", today))
+    updated = update_modified("\n".join(lines) + "\n", today)
+    validate_inserted_row(updated, line)
+    atomic_write(path, updated)
     return True
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="kb-capture-url")
     ap.add_argument("url")
-    ap.add_argument("--source", default="agent", help='Provenance, e.g. "agent claude" or "deepseek".')
+    ap.add_argument("--source", default="agent", help="Provenance label for the capture.")
     ap.add_argument("--session", default=None, help="Session id for traceability.")
     ap.add_argument("--topic", default=None, help="Target topic slug (routes to its ## Pending).")
     ap.add_argument("--note", default=None, help="Optional why-saved note.")
     ap.add_argument("--kb-root", type=Path, default=DEFAULT_KB_ROOT)
     args = ap.parse_args(argv)
 
-    if not re.match(r"^https?://", args.url):
+    values = (args.url, args.source, args.session or "", args.topic or "", args.note or "")
+    if any("\n" in value or "\r" in value for value in values):
+        print("kb-capture-url: queue arguments must be single-line", file=sys.stderr)
+        return 2
+    if not HTTP_LOOKING_RE.match(args.url):
         return 0  # silently ignore non-http(s) (hooks may pass odd values)
-    kb_root = args.kb_root.expanduser()
+    if (url_error := http_url_error(args.url)) is not None:
+        print(f"kb-capture-url: {url_error}", file=sys.stderr)
+        return 2
+    if args.topic and not TOPIC_SLUG_RE.fullmatch(args.topic):
+        print(f"kb-capture-url: invalid topic slug: {args.topic!r}", file=sys.stderr)
+        return 2
+    # Keep the caller's lexical path so canonical_root can reject a root
+    # reached through a symlink instead of silently accepting its destination.
+    kb_root = args.kb_root.expanduser().absolute()
     today = date.today()
 
     src = args.source.strip()
@@ -153,30 +260,41 @@ def main(argv: list[str] | None = None) -> int:
     line = f"- [ ] {args.url} — {note}{annotation}"
 
     with kb_write_lock(kb_root):
-        ingested = already_ingested(kb_root, args.url)
+        if args.topic:
+            target = kb_root / "topics" / args.topic / "reading-list.md"
+            target_label = f"topics/{args.topic}/reading-list.md ## Pending"
+        else:
+            target = kb_root / "readinglist" / "Links.md"
+            target_label = "readinglist/Links.md"
+
+        try:
+            guarded_text(target, kb_root)
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            if args.topic:
+                print(f"kb-capture-url: invalid requested topic '{args.topic}': {exc}", file=sys.stderr)
+            else:
+                print(f"kb-capture-url: unsafe queue target: {exc}", file=sys.stderr)
+            return 1
+
+        try:
+            ingested = already_ingested(kb_root, args.url)
+        except DedupError as exc:
+            print(f"kb-capture-url: refusing to write without a valid dedup result: {exc}", file=sys.stderr)
+            return 1
         if ingested:
             print(f"already ingested: {ingested}")
             return 0
 
-        topic_rl = None
-        if args.topic:
-            candidate = kb_root / "topics" / args.topic / "reading-list.md"
-            if candidate.exists():
-                topic_rl = candidate
+        try:
+            if args.topic:
+                wrote = append_under_pending(target, line, args.url, today)
             else:
-                print(f"topic '{args.topic}' has no reading-list; falling back to Links.md", file=sys.stderr)
+                wrote = append_to_end(target, line, args.url, today)
+        except (OSError, ValueError, RuntimeError) as exc:
+            print(f"kb-capture-url: unsafe queue operation: {exc}", file=sys.stderr)
+            return 1
 
-        if topic_rl is not None:
-            assert_kb_bot(topic_rl)
-            wrote = append_under_pending(topic_rl, line, args.url, today)
-            target = f"topics/{args.topic}/reading-list.md ## Pending"
-        else:
-            links = kb_root / "readinglist" / "Links.md"
-            assert_kb_bot(links)
-            wrote = append_to_end(links, line, args.url, today)
-            target = "readinglist/Links.md"
-
-    print(f"{'captured' if wrote else 'already queued'} -> {target}")
+    print(f"{'captured' if wrote else 'already queued'} -> {target_label}")
     return 0
 
 

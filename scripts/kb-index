@@ -7,7 +7,7 @@ navigate the KB without reading individual files.
 
 Usage:
   kb-index           rebuild full cache (default)
-  kb-index --update  only re-scan files newer than the cache
+  kb-index --update  explicitly refresh all metadata
   kb-index --stats   print summary statistics
 
 Exit codes:
@@ -19,35 +19,26 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from kb_config import (  # noqa: E402
+    KBConfigError,
+    atomic_write_text,
+    iter_markdown,
+    read_regular_text,
+    resolve_kb_root,
+)
+
 # ---------------------------------------------------------------------------
-# Config — shared with kb-tag/kb-lint pattern
-# ---------------------------------------------------------------------------
-
-
-def resolve_kb_root() -> Path:
-    env_val = os.environ.get("KB_ROOT")
-    if env_val:
-        return Path(os.path.expanduser(env_val)).resolve()
-    kb_config = Path.home() / ".claude/kb-config.md"
-    if kb_config.exists():
-        for line in kb_config.read_text().splitlines():
-            line = line.strip()
-            if line.startswith("KB_ROOT:") or line.startswith("KB_ROOT="):
-                val = line.split(":", 1)[-1] if ":" in line else line.split("=", 1)[-1]
-                val = val.strip().strip('"').strip("'")
-                if val:
-                    return Path(os.path.expanduser(val)).resolve()
-    return (Path.home() / "Documents/vault/knowledgebase").resolve()
-
-
 INDEX_FILE = "_kb-index.json"
 
 SKIP_NAMES = {
@@ -137,8 +128,8 @@ def build_record(path: Path, kb_root: Path) -> dict | None:
         return None
     try:
         mtime_s = path.stat().st_mtime
-        text = path.read_text(encoding="utf-8")
-    except OSError:
+        text = read_regular_text(path)
+    except (KBConfigError, OSError):
         return None
 
     m = FRONTMATTER_RE.match(text)
@@ -164,48 +155,15 @@ def build_record(path: Path, kb_root: Path) -> dict | None:
     }
 
 
-def build_index(kb_root: Path, update_only: bool = False) -> list[dict]:
-    index_path = kb_root / INDEX_FILE
-    existing: dict[str, dict] = {}
-    cache_mtime = 0.0
-
-    if update_only and index_path.exists():
-        try:
-            data = json.loads(index_path.read_text())
-            existing = {r["path"]: r for r in data if isinstance(r, dict) and "path" in r}
-            cache_mtime = index_path.stat().st_mtime
-            print(f"Loaded {len(existing)} existing records (update mode)", file=sys.stderr)
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    records: list[dict] = []
+def build_index(kb_root: Path) -> list[dict]:
+    records = []
     scanned = 0
-    updated = 0
-
-    search_dirs = [kb_root / "topics", kb_root / "projects"]
-    for d in search_dirs:
-        if not d.is_dir():
-            continue
-        for md_path in d.rglob("*.md"):
-            scanned += 1
-            rel = str(md_path.relative_to(kb_root))
-
-            if update_only and rel in existing:
-                try:
-                    file_mtime = md_path.stat().st_mtime
-                    if file_mtime <= cache_mtime:
-                        records.append(existing[rel])
-                        continue
-                except OSError:
-                    pass
-
-            rec = build_record(md_path, kb_root)
-            if rec:
-                records.append(rec)
-                updated += 1
-
-    print(f"Scanned {scanned} files, indexed {len(records)} notes ({updated} updated)",
-          file=sys.stderr)
+    for path in iter_markdown(kb_root, ("topics", "projects")):
+        scanned += 1
+        record = build_record(path, kb_root)
+        if record:
+            records.append(record)
+    print(f"Scanned {scanned} files, indexed {len(records)} notes", file=sys.stderr)
     return records
 
 
@@ -237,29 +195,38 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--update", action="store_true",
-                        help="Only re-scan files newer than the cache (faster)")
+                        help="Refresh all metadata; preserved as an alias for explicit rebuilding")
     parser.add_argument("--stats", action="store_true",
                         help="Print summary statistics after building")
     parser.add_argument("--kb-root", default=None)
     args = parser.parse_args()
 
-    kb_root = Path(args.kb_root) if args.kb_root else resolve_kb_root()
-    if not kb_root.is_dir():
-        print(f"error: KB not found at {kb_root}", file=sys.stderr)
+    try:
+        kb_root = resolve_kb_root(args.kb_root)
+    except KBConfigError as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    records = build_index(kb_root, update_only=args.update)
+    try:
+        records = build_index(kb_root)
+    except (KBConfigError, OSError) as exc:
+        print(f"error: cannot scan KB: {exc}", file=sys.stderr)
+        return 2
     records.sort(key=lambda r: r["path"])
 
     # Write cache
     index_path = kb_root / INDEX_FILE
     out = {
-        "built": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "built": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "kb_root": str(kb_root),
         "count": len(records),
         "records": records,
     }
-    index_path.write_text(json.dumps(out, indent=1, ensure_ascii=False))
+    try:
+        atomic_write_text(index_path, json.dumps(out, indent=1, ensure_ascii=False))
+    except (KBConfigError, OSError) as exc:
+        print(f"error: cannot write index: {exc}", file=sys.stderr)
+        return 2
     print(f"Wrote {index_path} ({index_path.stat().st_size // 1024} KB)")
 
     if args.stats:

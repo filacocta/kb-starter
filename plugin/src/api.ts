@@ -17,6 +17,9 @@ export function formatAsCallout(text: string): string {
 
 /** Call the Anthropic Messages API and return the assistant's reply text. */
 export async function askClaude(prompt: string, settings: KbBotSettings): Promise<string> {
+	if (!settings.apiKey.trim() || !settings.model.trim()) {
+		throw new Error("Configure an Anthropic API key and an available model ID in KB Bot settings.");
+	}
 	const response = await fetch(ANTHROPIC_API_URL, {
 		method: "POST",
 		headers: {

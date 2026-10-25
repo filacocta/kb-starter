@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
-"""Fetch structured tweet data from fxtwitter for KB ingestion."""
+"""Fetch structured tweet data from fxtwitter for KB ingestion.
+
+``--inventory status|thread`` is the source-facing path: it retrieves one
+selected endpoint, passes the complete response through the strict offline
+inventory helper, and emits only stdout JSON.  The legacy compact projection
+remains available for compatibility but is convenience-only, not source
+evidence.
+"""
 
 from __future__ import annotations
 
 import argparse
+import datetime
+import hashlib
+import importlib.util
 import json
 import re
 import sys
@@ -21,6 +31,14 @@ FXTWITTER_THREAD_URL = "https://api.fxtwitter.com/2/thread/{tweet_id}"
 
 HTTP_RETRIES = 4
 HTTP_BACKOFF_BASE = 1.5  # seconds; sleep = base * 2**attempt -> 1.5, 3, 6 (fxtwitter is intermittently flaky)
+INVENTORY_SCHEMA = "kb-tweet-fetch/inventory/v1"
+INVENTORY_ATTEMPTS = 1
+_EXTRACTOR_MODULE: Any | None = None
+INVENTORY_HOSTS = frozenset({
+    "x.com", "twitter.com", "fxtwitter.com", "vxtwitter.com", "fixupx.com",
+    "api.fxtwitter.com", "www.x.com", "www.twitter.com", "www.fxtwitter.com",
+    "www.vxtwitter.com", "www.fixupx.com",
+})
 
 
 def warn(message: str) -> None:
@@ -34,8 +52,21 @@ def dump(obj: dict[str, Any]) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Fetch structured tweet data for KB ingestion.")
     parser.add_argument("url")
-    parser.add_argument("--json", action="store_true", help="Print the structured tweet JSON to stdout.")
-    parser.add_argument("--out", help="Markdown artifact path.")
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the legacy compact convenience JSON to stdout (not source evidence).",
+    )
+    parser.add_argument(
+        "--inventory",
+        choices=("status", "thread"),
+        metavar="{status,thread}",
+        help="Fetch exactly one endpoint and emit a strict raw-response inventory to stdout.",
+    )
+    parser.add_argument(
+        "--out",
+        help="Retired: output is stdout-only; no filesystem artifact is written.",
+    )
     parser.add_argument("--max-thread", type=int, default=30, help="Maximum thread tweets to include.")
     parser.add_argument("--max-quote-chain", type=int, default=10, help="Maximum self-quote chain tweets to include.")
     return parser
@@ -45,6 +76,27 @@ def build_parser() -> argparse.ArgumentParser:
 class TweetFetch:
     tweet: dict[str, Any] | None
     error: str | None = None
+
+
+class InventoryError(ValueError):
+    """The bounded raw-response inventory could not be established."""
+
+
+def _load_inventory_extractor() -> Any:
+    """Load the shared pure FxTwitter payload inventory helper."""
+    global _EXTRACTOR_MODULE
+    if _EXTRACTOR_MODULE is not None:
+        return _EXTRACTOR_MODULE
+    # ``kb-fxtwitter-extract.py`` is hyphenated and is intentionally kept as a
+    # separate stdin-only parser.  Import it without changing its CLI or state.
+    extractor_path = Path(__file__).with_name("kb-fxtwitter-extract.py")
+    spec = importlib.util.spec_from_file_location("kb_fxtwitter_extract_for_tweet_fetch", extractor_path)
+    if spec is None or spec.loader is None:
+        raise InventoryError(f"could not load payload inventory helper: {extractor_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    _EXTRACTOR_MODULE = module
+    return module
 
 
 def parse_tweet_id(url: str) -> str:
@@ -67,6 +119,193 @@ def parse_tweet_id(url: str) -> str:
             return values[0]
 
     raise ValueError(f"could not parse tweet id from URL: {url}")
+
+
+def _response_header(response: Any, name: str) -> str | None:
+    headers = getattr(response, "headers", None)
+    if headers is not None and hasattr(headers, "get"):
+        value = headers.get(name)
+        if value is None:
+            value = headers.get(name.lower())
+        if value is not None:
+            return str(value)
+    getter = getattr(response, "getheader", None)
+    if callable(getter):
+        value = getter(name)
+        if value is not None:
+            return str(value)
+    return None
+
+
+def _response_status(response: Any) -> int:
+    value = getattr(response, "status", None)
+    if value is None:
+        getter = getattr(response, "getcode", None)
+        value = getter() if callable(getter) else None
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise InventoryError("fxtwitter response did not expose an HTTP status") from exc
+
+
+def _response_url(response: Any) -> str | None:
+    getter = getattr(response, "geturl", None)
+    if not callable(getter):
+        return None
+    try:
+        value = getter()
+    except Exception:
+        return None
+    return value if isinstance(value, str) and value else None
+
+
+class _InventoryNoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _open_inventory_request(request: urllib.request.Request, timeout: int = 20):
+    # A redirect would be another, unselected request. The default error
+    # handler turns an unfollowed 3xx into HTTPError for the caller to report.
+    return urllib.request.build_opener(_InventoryNoRedirect()).open(request, timeout=timeout)
+
+
+def _inventory_response(endpoint_url: str, max_bytes: int) -> tuple[bytes, dict[str, Any]]:
+    """Fetch one bounded response body without JSON decoding or retry/fallback."""
+    request = urllib.request.Request(endpoint_url, headers={"User-Agent": "kb-tweet-fetch/1.0"})
+    try:
+        with _open_inventory_request(request, timeout=20) as response:
+            status = _response_status(response)
+            content_length_header = _response_header(response, "Content-Length")
+            content_length: int | None = None
+            if content_length_header is not None:
+                try:
+                    parsed_length = int(content_length_header)
+                except ValueError:
+                    parsed_length = None
+                if parsed_length is not None and parsed_length >= 0:
+                    content_length = parsed_length
+                    if parsed_length > max_bytes:
+                        raise InventoryError(
+                            f"fxtwitter {endpoint_url} response exceeds the {max_bytes}-byte inventory limit"
+                        )
+            if status != 200:
+                raise InventoryError(f"fxtwitter HTTP {status} for {endpoint_url}")
+            # One sentinel byte distinguishes an exact-limit body from a
+            # valid JSON prefix whose remaining response was not consumed.
+            body = response.read(max_bytes + 1)
+            if isinstance(body, str):
+                body = body.encode("utf-8")
+            if not isinstance(body, bytes):
+                raise InventoryError("fxtwitter response body was not bytes")
+            if len(body) > max_bytes:
+                raise InventoryError(
+                    f"fxtwitter response exceeds the {max_bytes}-byte inventory limit"
+                )
+            if content_length is not None and len(body) != content_length:
+                raise InventoryError("fxtwitter response body does not match its declared Content-Length")
+            provenance = {
+                "request_url": endpoint_url,
+                "response_url": _response_url(response),
+                "http_status": status,
+                "content_type": _response_header(response, "Content-Type"),
+                "content_length": content_length,
+                "attempts": INVENTORY_ATTEMPTS,
+                "retrieved_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            }
+            return body, provenance
+    except InventoryError:
+        raise
+    except urllib.error.HTTPError as exc:
+        raise InventoryError(f"fxtwitter HTTP {exc.code} for {endpoint_url}") from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise InventoryError(f"fxtwitter request failed for {endpoint_url}: {exc}") from exc
+
+
+def inventory_endpoint(tweet_id: str, endpoint: str, requested_url: str) -> dict[str, Any]:
+    """Fetch and inventory exactly one FxTwitter endpoint, retaining no files."""
+    if endpoint not in {"status", "thread"}:
+        raise InventoryError("inventory endpoint must be exactly 'status' or 'thread'")
+    locator = urllib.parse.urlsplit(requested_url)
+    if (
+        locator.scheme not in {"http", "https"}
+        or locator.hostname not in INVENTORY_HOSTS
+        or locator.username is not None
+        or locator.password is not None
+        or locator.port not in {None, 80 if locator.scheme == "http" else 443}
+        or not re.fullmatch(r"[0-9]+", tweet_id)
+        or parse_tweet_id(requested_url) != tweet_id
+    ):
+        raise InventoryError("inventory requires a documented public X/Twitter/FxTwitter locator with the exact status ID")
+    extractor = _load_inventory_extractor()
+    max_bytes = int(getattr(extractor, "DEFAULT_MAX_BYTES", 8 * 1024 * 1024))
+    max_depth = int(getattr(extractor, "DEFAULT_MAX_DEPTH", 64))
+    max_quote_depth = int(getattr(extractor, "DEFAULT_MAX_QUOTE_DEPTH", 16))
+    endpoint_url = (
+        FXTWITTER_STATUS_URL if endpoint == "status" else FXTWITTER_THREAD_URL
+    ).format(tweet_id=tweet_id)
+    body, transport = _inventory_response(endpoint_url, max_bytes)
+    try:
+        payload = extractor.load_json_bytes(body, strict_json=True, max_bytes=max_bytes)
+        if isinstance(payload, dict) and "status" in payload and "tweet" in payload:
+            raise InventoryError(
+                "fxtwitter payload contains duplicate status/tweet root envelopes; refusing ambiguous inventory"
+            )
+        parsed = extractor.parse_payload(
+            payload,
+            tweet_id,
+            max_depth=max_depth,
+            max_quote_depth=max_quote_depth,
+            strict_json=True,
+        )
+    except InventoryError:
+        raise
+    except Exception as exc:
+        extractor_error = getattr(extractor, "ExtractionError", ())
+        if extractor_error and isinstance(exc, extractor_error):
+            raise
+        raise InventoryError(f"fxtwitter payload inventory failed: {exc}") from exc
+
+    digest = hashlib.sha256(body).hexdigest()
+    result: dict[str, Any] = {
+        "schema": INVENTORY_SCHEMA,
+        "mode": "raw-response-inventory",
+        "evidence_role": "raw-response-inventory",
+        "url": requested_url,
+        "requested_locator": requested_url,
+        "canonical_origin_established": False,
+        "endpoint": endpoint,
+        "endpoint_url": endpoint_url,
+        "requested_status_id": tweet_id,
+        "extractor_schema": parsed.get("schema"),
+        "limits": {
+            "max_bytes": max_bytes,
+            "max_depth": max_depth,
+            "max_quote_depth": max_quote_depth,
+            "attempts": INVENTORY_ATTEMPTS,
+        },
+        "transport": transport,
+        "raw_response": {
+            "sha256": digest,
+            "byte_length": len(body),
+            "encoding": "utf-8",
+            "decoded_payload_key": "raw_payload",
+            "raw_http_archive": False,
+            "note": "raw_payload is the complete decoded JSON envelope; it is not a raw HTTP archive",
+        },
+        "raw_payload_note": "raw_payload is the complete decoded JSON envelope; it is not a raw HTTP archive",
+    }
+    result.update({key: value for key, value in parsed.items() if key != "schema"})
+    return result
+
+
+def inventory(args: argparse.Namespace) -> dict[str, Any]:
+    if getattr(args, "out", None) is not None:
+        raise InventoryError("--out is retired: the inventory path is stdout-only")
+    if args.inventory not in {"status", "thread"}:
+        raise InventoryError("inventory endpoint must be exactly 'status' or 'thread'")
+    tweet_id = parse_tweet_id(args.url)
+    return inventory_endpoint(tweet_id, args.inventory, args.url)
 
 
 def _get_json_with_retry(url: str, label: str, valid) -> tuple[dict[str, Any] | None, str | None]:
@@ -468,6 +707,47 @@ def collect_video_urls(
     return urls
 
 
+def _dedupe_urls(urls: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for url in urls:
+        if url in seen:
+            continue
+        seen.add(url)
+        out.append(url)
+    return out
+
+
+def collect_video_urls_by_context(
+    main: dict[str, Any] | None,
+    quote: dict[str, Any] | None,
+    thread: list[dict[str, Any]],
+    quote_chain: list[dict[str, Any]] | None = None,
+) -> dict[str, list[str]]:
+    main_id = str(main.get("id") or "") if main else ""
+    quote_id = str(quote.get("id") or "") if quote else ""
+    quote_chain_ids = {str(item.get("id") or "") for item in quote_chain or []}
+    return {
+        "main": _dedupe_urls(list((main or {}).get("videos") or [])),
+        "quote": [] if quote_id in quote_chain_ids else _dedupe_urls(list((quote or {}).get("videos") or [])),
+        "same_author_thread": _dedupe_urls(
+            [
+                url
+                for tweet in thread
+                if str(tweet.get("id") or "") not in {main_id, quote_id} | quote_chain_ids
+                for url in tweet.get("videos") or []
+            ]
+        ),
+        "self_quote_chain": _dedupe_urls(
+            [url for tweet in quote_chain or [] for url in tweet.get("videos") or []]
+        ),
+    }
+
+
+def flatten_video_contexts(videos_by_context: dict[str, list[str]]) -> list[str]:
+    return _dedupe_urls([url for urls in videos_by_context.values() for url in urls])
+
+
 def build_thread(tweet_id: str, focal_author: str | None, max_thread: int) -> tuple[list[dict[str, Any]], list[str]]:
     raw_thread, error = fetch_thread(tweet_id)
     if error:
@@ -579,19 +859,31 @@ def render_markdown(data: dict[str, Any]) -> str:
         lines.extend(["## Video URLs", ""])
         lines.extend(f"- {url}" for url in data["video_urls"])
         lines.append("")
+    videos_by_context = data.get("videos_by_context") or {}
+    if any(videos_by_context.values()):
+        lines.extend(["## Video URLs by Context", ""])
+        for context, urls in videos_by_context.items():
+            if not urls:
+                continue
+            lines.extend([f"### {context}", ""])
+            lines.extend(f"- {url}" for url in urls)
+            lines.append("")
     return "\n".join(lines)
 
 
 def write_markdown_artifact(data: dict[str, Any], out: str | None) -> None:
-    if not out:
+    if out is None:
         return
-    out_path = Path(out).expanduser().resolve()
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    data["out"] = str(out_path)
-    out_path.write_text(render_markdown(data), encoding="utf-8")
+    raise ValueError(
+        "--out is retired: kb-tweet-fetch is stdout-only; use the protected evidence custody/publication workflow"
+    )
 
 
 def analyze(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    if getattr(args, "out", None) is not None:
+        raise ValueError(
+            "--out is retired: kb-tweet-fetch is stdout-only; use the protected evidence custody/publication workflow"
+        )
     if args.max_thread < 1:
         raise ValueError("--max-thread must be positive")
     if args.max_quote_chain < 0:
@@ -606,6 +898,8 @@ def analyze(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     if not fetched.tweet:
         result = {
             "url": args.url,
+            "output_kind": "compact-convenience",
+            "evidence_role": "convenience-only-not-source-evidence",
             "main": None,
             "quote": None,
             "quote_chain": [],
@@ -645,14 +939,18 @@ def analyze(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         "quote_chain_len": len(quote_chain),
         "quote_chain_truncated": quote_chain_truncated,
     }
+    videos_by_context = collect_video_urls_by_context(main, quote, thread, quote_chain)
     result = {
         "url": args.url,
+        "output_kind": "compact-convenience",
+        "evidence_role": "convenience-only-not-source-evidence",
         "main": main,
         "quote": quote,
         "quote_chain": quote_chain,
         "thread": thread,
         "flags": flags,
-        "video_urls": collect_video_urls(main, quote, thread, quote_chain),
+        "video_urls": flatten_video_contexts(videos_by_context),
+        "videos_by_context": videos_by_context,
         "warnings": warnings,
     }
     write_markdown_artifact(result, args.out)
@@ -662,6 +960,21 @@ def analyze(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.out is not None:
+        parser.error(
+            "--out is retired: kb-tweet-fetch is stdout-only; use the protected evidence custody/publication workflow"
+        )
+    if args.inventory is not None:
+        try:
+            result = inventory(args)
+        except Exception as exc:
+            print(
+                json.dumps({"error": type(exc).__name__, "message": str(exc)}, ensure_ascii=False),
+                file=sys.stderr,
+            )
+            return 2
+        dump(result)
+        return 0
     try:
         result, code = analyze(args)
     except ValueError as exc:
@@ -670,6 +983,8 @@ def main(argv: list[str] | None = None) -> int:
         warn(f"total failure: {exc}")
         result = {
             "url": args.url,
+            "output_kind": "compact-convenience",
+            "evidence_role": "convenience-only-not-source-evidence",
             "main": None,
             "quote": None,
             "quote_chain": [],
@@ -685,7 +1000,7 @@ def main(argv: list[str] | None = None) -> int:
             "warnings": [str(exc)],
         }
         code = 1
-    if args.json:
+    if args.json or not args.out:
         dump(result)
     elif result.get("out"):
         warn(f"wrote {result.get('out')}")

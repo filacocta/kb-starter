@@ -1,47 +1,27 @@
 ---
 author: kb-bot
 created: 2026-04-13
-modified: 2026-06-17
+modified: 2026-10-25
 type: index
+title: Knowledge map
 ---
 
-# Knowledge Base Index
+# Knowledge map
 
-This file is the top-level navigation map for the KB. It is kept current as topics and projects are added. Agents: read this first, then read the `_summary.md` of whichever topic seems relevant.
-
-For structural conventions and rules, see [[knowledgebase/_schema]] and [[knowledgebase/_rules]].
-
----
+Use a relevant summary or bounded search before opening evidence. This map is
+navigation, not a required startup read. [AGENTS.md](AGENTS.md) routes tasks.
 
 ## Topics
 
-| Topic | Summary | Notes | Sources | Last updated |
-|---|---|---|---|---|
-| [[knowledgebase/topics/obsidian|obsidian]] | [[knowledgebase/topics/obsidian/_summary]] | 7 | 6 | 2026-04-10 |
-
----
+| Topic | Summary |
+|---|---|
+| Obsidian | [[knowledgebase/topics/obsidian/_summary]] |
 
 ## Projects
 
-The starter includes optional project scaffolds for workflow tools shipped in this repository. They are not active user projects until the installer configures and runs them locally.
+No application project is preconfigured. Find existing work before creating a
+project, then link its summary here. The KB does not start a service.
 
-| Project | Summary | Status | Last updated |
-|---|---|---|---|
-| [[knowledgebase/projects/kb-feed|kb-feed]] | [[knowledgebase/projects/kb-feed/_summary]] | optional scaffold | 2026-06-16 |
-| [[knowledgebase/projects/kb-workflow-dashboard|kb-workflow-dashboard]] | [[knowledgebase/projects/kb-workflow-dashboard/_summary]] | optional scaffold | 2026-06-17 |
-
----
-
-## KB Statistics
-
-- Topics: 1
-- Projects: 2 optional scaffolds
-- Total notes: 8
-- Total sources ingested: 6
-- Last ingestion: 2026-04-10
-
----
-
-## Checkpoint
-
-See `_checkpoint.md` — no operations in progress. See `_dive-queue.md` for research rabbit holes flagged for future study.
+Inventory and duplicate counts come from `kb-audit`, not manually maintained
+statistics. Operation records live at their scope; this map does not describe
+current execution state.

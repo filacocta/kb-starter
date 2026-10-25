@@ -1,109 +1,82 @@
 ---
 author: kb-bot
 created: 2026-06-21
-modified: 2026-06-21
+modified: 2026-10-25
 type: meta
-title: KB Tools — Workflow & Endpoint Reference
-description: Authoritative index of the _tools/ scripts (the KB's programmatic endpoints), the queue write contract, the source-of-truth vs generated files, and the canonical capture→ingest→synthesise workflow.
+title: KB executable endpoints
 ---
 
-# KB Tools — Workflow & Endpoint Reference
+# KB executable endpoints
 
-The `_tools/` scripts are the KB's **programmatic endpoints** — the only sanctioned
-way for any agent (LLM or script) to mutate queue/markdown state. This file is the
-single place to learn *which tool does what* and *which files are authoritative vs
-generated*, so no agent has to reverse-engineer the contract. Read `_schema.md`
-(structure) and `_rules.md` (behaviour) for the full specification; this is the
-operational index that points into them.
+Use `--help` on the selected helper for exact arguments. Run helpers with the
+KB's Python environment and always pass `--kb-root ROOT` when available.
+These commands do not replace current user authorization or factual review.
 
-## The write-lock contract (non-negotiable)
+## Task routing
 
-Every mutation of a queue or reading-list file goes through a tool that holds the
-shared exclusive lock `<kb-root>/.kb-write.lock`, re-reads the target inside the
-lock, and writes atomically (temp file + `os.replace`). This is how interactive
-sessions, `/kb-auto`, and kb-feed mutate the same files concurrently without races.
-**Never hand-edit queue markdown** to add/move/check items — call the matching tool.
+The [write contract](../_rules.md), [formats](../_schema.md) and the selected
+[flow](../AGENTS.md) are authoritative. This page locates operations; it is not
+another rulebook. Ordinary context retrieval uses the installed `kb-search`
+with explicit domain and output budget and needs no Obsidian app or index.
 
-## Source of truth vs generated
+| Operation | Executable owner |
+|---|---|
+| Scope/identity preflight | `kb-prep-item.py --url URL --skip-media`, `kb-seen.py`, `kb-ingestion-preflight.py` |
+| URL capture and section promotion | `kb-capture-url.py`, `kb-promote.py` |
+| Queue completion or repair | `kb-checkoff.py` |
+| Staged source validation | `kb-validate-source-candidate.py` |
+| Permitted extraction evidence | `kb-retain-evidence.py` |
+| Exact-draft independent review record | `kb-review-receipt.py --input JSON`, `--verify RECEIPT` |
+| New immutable source publication | `kb-commit-source.py` |
+| Scoped source replacement | `kb-source-successor.py --manifest JSON` |
+| Mechanical source link repair | `kb-repair-source-wikilinks.py` |
+| Shared note-write boundary | `kb-write-guard.py` library: `write_lock`, `regular_text`, `atomic_create`, `atomic_write` |
+| Activity append | `kb-log-append.py` |
+| Derived queue | `kb-derive-dive-queue.py` |
+| Queue URL dedup/rehome | `kb-dedupe.py`, `kb-rehome-url.py` |
+| Structural conformance | `kb-lint.py` |
+| Read-only project Git observation | `kb-project-status.py` |
+| Media capture/local inspection/cleanup | `kb-media-capture.py`, `kb-media-inspect.py` capture/inspect/cleanup modes |
+| OCR and mutable media backlinks | `kb-ocr-enrich.py`, `kb-link-media-backlinks.py` |
+| Selected citation/archive lookup | `kb-resolve-reference.py`, `kb-wayback.py` |
+| Book lifecycle | `kb-book-ledger.py` |
 
-| File | Status | Written by |
-|---|---|---|
-| `topics/<t>/reading-list.md` (the section ladder) | **source of truth** | kb-capture-url (add), kb-promote (move), kb-checkoff (mark) |
-| `topics/<t>/research-ideas.md` | source of truth | agents (prose rabbit holes) |
-| `readinglist/Links.md` (global URL inbox) | source of truth | kb-capture-url, kb-feed |
-| `readinglist/topics.md` (broad-interest inbox) | source of truth | kb-feed, agents |
-| `ideas/_backlog.md` | source of truth | kb-checkoff `--route-ideas-backlog`, agents |
-| `_dive-queue.md` | **GENERATED — read-only** | kb-derive-dive-queue (never hand-edit) |
+Some host-specific helpers exist only in the live KB. Check availability; do
+not copy an unreviewed helper from another domain or invent a missing endpoint.
+Detailed media CLI contracts sit beside their tools and load only for that task.
 
-`_dive-queue.md` is **not deprecated** — what was deprecated is treating it as a
-*writable* queue. It is now strictly a generated cross-topic dashboard derived from
-every topic's `## Auto-approved` unchecked items plus `research-ideas.md`. The
-queue-mutating tools best-effort regenerate it after a write (so promoting an item
-into/out of `## Auto-approved` keeps the dashboard correct), and it is regenerated
-nightly. Agents and scripts must not append to it (Rule 13).
+## Publication example
 
-## The section ladder (per-topic reading list)
+Run from the selected KB root, or use absolute script paths.
 
-Five canonical level-2 sections, in order — enforced by `kb-lint.py`:
-
-`## Pending → ## Approved → ## Auto-approved → ## Processed → ## Failed — Retry`
-
-Items are distinguished by **section**, not by checkbox mark (Pending and Approved
-items are both `- [ ]`). So advancing an item is a **move between sections**, and
-`## Auto-approved` is the only headless-ingestion lane. See `_schema.md` →
-"Topic Reading Lists" for the full table and the Auto-approved gate.
-
-## The canonical workflow
-
-```
-CAPTURE            TRIAGE              LADDER (per topic)              INGEST            SYNTHESISE
-Links.md   ──▶  assign to a topic ──▶ Pending ─▶ Approved ─▶ Auto-approved ─▶ source notes ─▶ wiki notes
-topics.md       (research-ideas.md     (kb-promote moves items     (/kb-queue       (/kb-synthesise)
-Telegram         for prose ideas)       up the ladder)              interactive,
-(kb-feed)                                                           /kb-auto headless
-                                                                    → kb-checkoff [x]
-                                                                    → moves to Processed)
+```sh
+python _tools/kb-validate-source-candidate.py --kb-root ROOT \
+  --staged-text DRAFT --candidate-path topics/TOPIC/sources/NOTE.md --json
+python _tools/kb-review-receipt.py --kb-root ROOT --input REVIEW.json
+python _tools/kb-commit-source.py --kb-root ROOT --staged-text DRAFT \
+  --candidate-path topics/TOPIC/sources/NOTE.md \
+  --queue-file topics/TOPIC/reading-list.md --url URL --review-receipt RECEIPT
 ```
 
-## Endpoints — queue write verbs (the contract core)
+The review input must match the helper's actual schema and actual independent
+comparison. No generated JSON placeholder grants approval. Use `--mode headless`
+only for the controller-supplied Auto-approved row. A seen source still needs
+validation and current review before a new completion.
 
-| Tool | Verb | What it does | Use when |
-|---|---|---|---|
-| `kb-capture-url.py` | **ADD** | Append a *new* URL under a topic's `## Pending` (`--topic`) or to `readinglist/Links.md` (global inbox), with agent/session provenance. Lock-safe. Backs the WebFetch capture hook. | Capturing a freshly-seen URL into the pipeline. |
-| `kb-promote.py` | **MOVE** | Move an existing `- [ ]` line between canonical ladder sections (`--from`/`--to`, matched by `--url` substring; `###` sub-groups roll up to their `##` parent). Lock-safe, atomic, regenerates the dive-queue. `--dry-run` previews; `--json` for programmatic callers. | Advancing an item Pending→Approved→Auto-approved (the only contract-safe section mover). |
-| `kb-checkoff.py` | **MARK** | Flip an existing line's checkbox in place (`[ ]`→`[x]/[!]/[~]/[?]`) matched by `--url`. `--route-ideas-backlog` also appends the original to `ideas/_backlog.md`. Regenerates the dive-queue. | Marking ingested (`[x]`) or permanently failed (`[!]`) per Rule 18. |
-| `kb-derive-dive-queue.py` | **GENERATE** | Rebuild `_dive-queue.md` from Auto-approved + research-ideas. Dry-run by default; `--write` to commit. | Rarely called by hand — the mark/move tools and the nightly job invoke it. |
+The publisher does not fetch, call models, synthesize articles or commit Git.
+`SOURCE_AND_QUEUE_COMPLETE` covers source and queue only.
+`SOURCE_WRITTEN_QUEUE_PENDING` requires exact-byte reconciliation.
 
-## Endpoints — pre-fetch & dedup (read-only)
+## Enforcement boundaries
 
-| Tool | What it does | Use when |
-|---|---|---|
-| `kb-seen.py` | Ingestion-level dedup: is this URL already ingested? (`--check`). | **Before any fetch** — dedup is mandatory (CLAUDE.md). |
-| `kb-prep-item.py` | Read-only pre-fetch prep: dedup + transport mirror rewrite + media discovery. Writes nothing. | Centralised pre-fetch step for interactive and headless ingest. |
+The shared parser selects exact primary locators and canonical approval sections.
+The write guard checks containment, ownership, symlinks, singly-linked regular
+files and cooperative locking. The publisher/checkoff bind final source bytes,
+review, queue and locator. Evidence/receipt hashes do not establish factual truth,
+authenticated human approval, visual completeness or whole-operation atomicity.
 
-## Endpoints — fetch & media capture
-
-| Tool | What it does |
-|---|---|
-| `kb-media-capture.py` | Discover and capture media on a source page (CLI contract in `kb-media-capture.md`). All ingest skills call it; none re-implement scraping. |
-| `kb-headless-capture.py` | Headless-Chromium fallback for JS-rendered / Cloudflare-gated pages and element screenshots. |
-| `kb-tweet-fetch.py` | Fetch structured tweet/thread data via fxtwitter for ingestion. |
-| `kb-video-analyze.py` | Analyze a video URL into a structured transcript/ingestion artifact. |
-| `kb-ocr-enrich.py` | OCR + vision-description enrichment for `type: media-description` notes (uses the current `google-genai` SDK). |
-| `kb-link-media-backlinks.py` | Suggest (and optionally apply) See Also backlinks from media to concept/synthesis notes. |
-
-## Endpoints — diagnostics (read-only)
-
-| Tool | What it does |
-|---|---|
-| `kb-lint.py` | Structural lint: canonical-ladder enforcement, broken wikilinks, frontmatter, stale sources, media integrity. `--all` for the whole KB. |
-| `kb-obsidian-cli.py` | Optional read-only bridge to the Obsidian CLI for diagnostics/search (requires the desktop app running). |
-
-## What does NOT exist (to prevent re-confusion)
-
-- There is **no generic command runner or arbitrary section editor** — mutations are
-  limited to the verbs above (add / move / mark / generate).
-- `_dive-queue.md` has **no writer** other than `kb-derive-dive-queue.py`.
-- Tests live in `_tools/tests/` (pytest, `tmp_path` fixtures, importlib-loaded
-  hyphenated scripts). Run with a pytest-equipped interpreter, e.g.
-  `~/Vault/projects/kb-feed/.venv/bin/python -m pytest _tools/tests/`.
+JSON evidence, reviews, successors and controller receipts follow their creating
+tools' schemas; do not hand-edit them to satisfy a gate. Failure/interruption
+does not authorize retries, deleting staging, or resetting scheduler latches.
+For scheduled operation and model routes, use the host's configured runbook
+and `_tools/deploy/README.md` when present. No service is enabled here.

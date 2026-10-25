@@ -20,3 +20,24 @@ Thumbs.db
 ## Editor
 .vscode/
 .idea/
+
+# Private runtime artifacts are never starter release material.
+.venv/
+*.egg-info/
+.obsidian/
+knowledgebase/_tools/auto-state/
+knowledgebase/_tools/evidence/
+knowledgebase/_tools/reviews/
+knowledgebase/_tools/successors/
+knowledgebase/_tools/staging/
+knowledgebase/_tools/runs/
+knowledgebase/_tools/cache/
+knowledgebase/_tools/*.log
+knowledgebase/.kb-write.lock
+knowledgebase/_url-aliases.json
+knowledgebase/_kb-index.json
+knowledgebase/_library/books/*
+!knowledgebase/_library/books/_ledger.md
+!knowledgebase/_library/books/_README.md
+knowledgebase/_library/docs/*
+!knowledgebase/_library/docs/_README.md

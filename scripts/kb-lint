@@ -26,42 +26,37 @@ Exit codes:
     2 = errors
 
 Env:
-    KB_ROOT  Override KB path. Default: ~/Documents/{{VAULT_NAME}}/knowledgebase
-             (also reads ~/.claude/kb-config.md `KB_ROOT:` line).
+    KB_ROOT  Explicit KB path. KB_CONFIG/KB_CONFIG_PATH and the selected
+             agent's supported config are also accepted; an unconfigured or
+             ambiguous root is an error.
 """
 from __future__ import annotations
 
 import argparse
 import datetime as dt
 import json
-import os
 import re
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from kb_config import (  # noqa: E402
+    KBConfigError,
+    iter_markdown,
+    read_regular_text,
+    resolve_kb_root,
+    validate_topic_slug,
+)
+
 WIKILINK_RE = re.compile(r"!?\[\[([^\]\n|]+)(?:\|[^\]\n]+)?\]\]")
 FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
 FENCED_CODE_RE = re.compile(r"^```.*?^```", re.DOTALL | re.MULTILINE)
 INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
-
-
-def resolve_kb_root() -> Path:
-    """KB_ROOT env wins; else ~/.claude/kb-config.md; else default vault path."""
-    env_val = os.environ.get("KB_ROOT")
-    if env_val:
-        return Path(os.path.expanduser(env_val)).resolve()
-    kb_config = Path.home() / ".claude/kb-config.md"
-    if kb_config.exists():
-        for line in kb_config.read_text().splitlines():
-            line = line.strip()
-            if line.startswith("KB_ROOT:") or line.startswith("KB_ROOT="):
-                val = line.split(":", 1)[-1] if ":" in line else line.split("=", 1)[-1]
-                val = val.strip().strip('"').strip("'")
-                if val:
-                    return Path(os.path.expanduser(val)).resolve()
-    return (Path.home() / "Documents/vault/knowledgebase").resolve()
 
 
 def strip_code(text: str) -> str:
@@ -147,16 +142,12 @@ def parse_frontmatter(text: str) -> tuple[dict, str]:
 
 def walk_kb(root: Path, topic: str | None = None) -> list[Path]:
     out: list[Path] = []
-    base = root / "topics" / topic if topic else root
-    for dirpath, dirnames, filenames in os.walk(base, followlinks=True):
-        dirnames[:] = [d for d in dirnames if d not in (".obsidian", ".git", ".trash")]
-        for fn in filenames:
-            if not fn.endswith(".md"):
-                continue
-            p = os.path.join(dirpath, fn)
-            if any(f in p for f in EXCLUDED_DIR_FRAGMENTS):
-                continue
-            out.append(Path(p))
+    relative_dirs = ((Path("topics") / topic).as_posix(),) if topic else None
+    for path in iter_markdown(root, relative_dirs):
+        rel = path.relative_to(root).as_posix()
+        if any(f in f"/{rel}" for f in EXCLUDED_DIR_FRAGMENTS):
+            continue
+        out.append(path)
     return out
 
 
@@ -164,9 +155,9 @@ def load_files(paths: list[Path], root: Path) -> list[FileMeta]:
     metas: list[FileMeta] = []
     for p in paths:
         try:
-            text = p.read_text(encoding="utf-8", errors="replace")
+            text = read_regular_text(p)
             st = p.stat()
-        except OSError:
+        except (KBConfigError, OSError):
             continue
         fm, body = parse_frontmatter(text)
         metas.append(FileMeta(
@@ -486,9 +477,12 @@ def lint_source_immutability(metas: list[FileMeta]) -> list[Finding]:
 def lint_topic_structure(root: Path, topic_filter: str | None) -> list[Finding]:
     findings: list[Finding] = []
     topics_dir = root / "topics"
-    if not topics_dir.is_dir():
+    if not topics_dir.is_dir() or topics_dir.is_symlink():
         return findings
-    topics = [t for t in topics_dir.iterdir() if t.is_dir() and not t.name.startswith(".")]
+    topics = [
+        t for t in topics_dir.iterdir()
+        if t.is_dir() and not t.is_symlink() and not t.name.startswith(".")
+    ]
     if topic_filter:
         topics = [t for t in topics if t.name == topic_filter]
     for t in topics:
@@ -610,15 +604,19 @@ def main() -> int:
     p.add_argument("--stale-days", type=int, default=30, help="staleness threshold for `updated:` field (default 30)")
     p.add_argument("--no-orphans", action="store_true", help="skip orphan detection (slowest pass)")
     p.add_argument("--no-stale", action="store_true", help="skip staleness check")
+    p.add_argument("--kb-root", default=None, help="explicit KB root")
     fmt = p.add_mutually_exclusive_group()
     fmt.add_argument("--json", action="store_true")
     fmt.add_argument("--md", action="store_true")
     p.add_argument("--errors-only", action="store_true", help="exit 1 only on errors, not warnings")
     args = p.parse_args()
 
-    root = resolve_kb_root()
-    if not root.is_dir():
-        print(f"kb-lint: KB root not found: {root}", file=sys.stderr)
+    try:
+        root = resolve_kb_root(args.kb_root)
+        if args.topic:
+            validate_topic_slug(args.topic, root)
+    except KBConfigError as exc:
+        print(f"kb-lint: {exc}", file=sys.stderr)
         return 3
 
     # Always load the full KB for index/resolution; scope only the report targets.
@@ -628,8 +626,11 @@ def main() -> int:
 
     topics_dir = root / "topics"
     topic_names: set[str] = set()
-    if topics_dir.is_dir():
-        topic_names = {t.name for t in topics_dir.iterdir() if t.is_dir() and not t.name.startswith(".")}
+    if topics_dir.is_dir() and not topics_dir.is_symlink():
+        topic_names = {
+            t.name for t in topics_dir.iterdir()
+            if t.is_dir() and not t.is_symlink() and not t.name.startswith(".")
+        }
 
     if args.topic:
         scoped_paths = walk_kb(root, args.topic)

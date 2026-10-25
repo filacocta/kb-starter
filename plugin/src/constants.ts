@@ -2,7 +2,7 @@ import { KbBotSettings } from "./types";
 
 export const DEFAULT_SETTINGS: KbBotSettings = {
 	apiKey: "",
-	model: "claude-sonnet-4-6",
+	model: "",
 	maxTokens: 1024,
 };
 

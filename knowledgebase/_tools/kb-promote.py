@@ -22,19 +22,63 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import importlib.util
 import json
 import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+import yaml
 
 LOCK_NAME = ".kb-write.lock"
 CHECKBOX_RE = re.compile(r"^\s*-\s+\[[ xX!~?]\]\s")
-H2_RE = re.compile(r"^##[ \t]+(.+?)\s*$")
-H23_RE = re.compile(r"^(#{2,3})[ \t]+(.+?)\s*$")
 # Canonical reading-list section ladder (see _schema.md / _rules.md).
 CANONICAL = ["Pending", "Approved", "Auto-approved", "Processed", "Failed — Retry"]
+
+
+def _load_write_guard():
+    """Load the hyphenated shared guard without requiring a package install."""
+    key = "_kb_write_guard"
+    module = sys.modules.get(key)
+    if module is not None:
+        return module
+    spec = importlib.util.spec_from_file_location(key, Path(__file__).with_name("kb-write-guard.py"))
+    if spec is None or spec.loader is None:
+        raise ImportError("cannot load kb-write-guard.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[key] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_write_guard = _load_write_guard()
+
+
+def queue_parser():
+    key = "kb_promotion_queue_parser"
+    if key not in sys.modules:
+        spec = importlib.util.spec_from_file_location(key, Path(__file__).with_name("kb-queue-parse.py"))
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[key] = module
+        spec.loader.exec_module(module)
+    return sys.modules[key]
+
+
+def has_url_whitespace_or_control(value: str) -> bool:
+    return any(character.isspace() or ord(character) < 32 or ord(character) == 127 for character in value)
+
+
+def guarded_text(path: Path, kb_root: Path) -> str:
+    """Compatibility wrapper around the shared canonical queue guard."""
+    return _write_guard.guarded_text(path, kb_root)
+
+
+def atomic_write(path: Path, text: str) -> None:
+    """Compatibility wrapper around the shared mode-preserving writer."""
+    _write_guard.atomic_write(path, text, prefix=".kb-promote-")
 
 
 def regenerate_dive_queue(kb_root: Path) -> None:
@@ -51,40 +95,17 @@ def regenerate_dive_queue(kb_root: Path) -> None:
 
 
 def find_in_section(lines: list[str], url: str, section: str) -> list[int]:
-    """Return indices of checkbox lines containing `url` under canonical `##
-    section`. A `###` sub-group keeps its parent `##` section."""
-    hits: list[int] = []
-    canonical: str | None = None
-    for i, line in enumerate(lines):
-        heading = H23_RE.match(line.rstrip("\n"))
-        if heading:
-            if len(heading.group(1)) == 2:
-                canonical = heading.group(2)
-            continue
-        if canonical == section and CHECKBOX_RE.match(line) and url in line:
-            hits.append(i)
-    return hits
+    """Return indices whose URL token exactly equals *url* under a section."""
+    parsed = queue_parser().parse_queue("".join(lines))
+    parsed.require_approval_safe()
+    return [row.line - 1 for row in parsed.rows
+            if row.mark == " " and row.section == section and row.locator == url]
 
 
 def section_insert_index(lines: list[str], section: str) -> int | None:
     """End-of-section insertion point for `## section` (before the next `##`,
     trailing blanks trimmed), or None if the section header is absent."""
-    head_idx = None
-    for i, line in enumerate(lines):
-        m = H2_RE.match(line.rstrip("\n"))
-        if m and m.group(1) == section:
-            head_idx = i
-            break
-    if head_idx is None:
-        return None
-    insert_at = len(lines)
-    for i in range(head_idx + 1, len(lines)):
-        if H2_RE.match(lines[i].rstrip("\n")):
-            insert_at = i
-            break
-    while insert_at > head_idx + 1 and lines[insert_at - 1].strip() == "":
-        insert_at -= 1
-    return insert_at
+    return queue_parser().section_insert_index("".join(lines), section)
 
 
 def promote(
@@ -96,6 +117,10 @@ def promote(
     kb_root: Path,
     dry_run: bool = False,
 ) -> tuple[bool, str, dict]:
+    if has_url_whitespace_or_control(url):
+        return False, "URL argument must not contain whitespace or control characters", {}
+    if any("\n" in value or "\r" in value for value in (from_section, to_section)):
+        return False, "queue arguments must be single-line", {}
     if from_section not in CANONICAL:
         return False, f"--from must be a canonical section {CANONICAL}, got {from_section!r}", {}
     if to_section not in CANONICAL:
@@ -103,18 +128,23 @@ def promote(
     if from_section == to_section:
         return False, "--from and --to are the same section", {}
 
-    lock_path.touch(exist_ok=True)
-    with open(lock_path, "r") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)  # released on close
-        try:
-            text = file_path.read_text(encoding="utf-8")
+    try:
+        root = _write_guard.canonical_root(kb_root)
+    except (OSError, ValueError) as exc:
+        return False, f"invalid KB root: {exc}", {}
+    try:
+        with _write_guard.write_lock(root, lock_path):
+            try:
+                text = guarded_text(file_path, root)
+            except (OSError, ValueError, yaml.YAMLError) as exc:
+                return False, f"unsafe queue target: {exc}", {}
             lines = text.splitlines(keepends=True)
 
             hits = find_in_section(lines, url, from_section)
             if not hits:
-                return False, f"no line containing {url!r} under '## {from_section}'", {}
+                return False, f"no line with exact URL {url!r} under '## {from_section}'", {}
             if len(hits) > 1:
-                return False, f"ambiguous: {len(hits)} lines contain {url!r} under '## {from_section}'", {}
+                return False, f"ambiguous: {len(hits)} lines exactly match {url!r} under '## {from_section}'", {}
             idx = hits[0]
 
             if section_insert_index(lines, to_section) is None:
@@ -139,27 +169,29 @@ def promote(
             assert insert_at is not None
             lines.insert(insert_at, moved)
 
-            tmp = file_path.with_suffix(file_path.suffix + ".tmp")
-            tmp.write_text("".join(lines), encoding="utf-8")
-            os.replace(tmp, file_path)
+            atomic_write(file_path, "".join(lines))
             info["line"] = insert_at + 1
             return True, f"moved line '{from_section}' -> '{to_section}' in {file_path.name}", info
-        finally:
-            fcntl.flock(lock, fcntl.LOCK_UN)
+    except _write_guard.WriteGuardError as exc:
+        return False, f"unsafe KB lock: {exc}", {}
+    except (ValueError, OSError, RuntimeError) as exc:
+        return False, f"unsafe queue operation: {exc}", {}
 
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Race-safe reading-list section promotion (move).")
-    p.add_argument("--kb-root", default=str(Path.home() / "Vault" / "knowledgebase"))
+    p.add_argument("--kb-root", default=str(Path(__file__).resolve().parents[1]))
     p.add_argument("--file", required=True, help="reading-list file (relative to kb-root or absolute)")
-    p.add_argument("--url", required=True, help="substring identifying the line to move")
+    p.add_argument("--url", required=True, help="exact URL token identifying the line to move")
     p.add_argument("--from", dest="from_section", required=True, help="source section (canonical)")
     p.add_argument("--to", dest="to_section", required=True, help="target section (canonical)")
     p.add_argument("--dry-run", action="store_true", help="report the planned move without writing")
     p.add_argument("--json", action="store_true", help="emit a JSON result object on stdout")
     args = p.parse_args(argv)
 
-    kb_root = Path(args.kb_root).expanduser().resolve()
+    # Preserve the lexical root so the shared guard can reject symlinked roots
+    # and parent traversal rather than silently following them.
+    kb_root = Path(args.kb_root).expanduser().absolute()
     fp = Path(args.file)
     if not fp.is_absolute():
         fp = kb_root / fp

@@ -1,0 +1,16 @@
+{
+  "release": "2.1.0",
+  "paths": [
+    "AGENTS.md",
+    "_rules.md",
+    "_schema.md",
+    "_workflows/ingest.md",
+    "_workflows/synthesise.md",
+    "_workflows/project.md",
+    "_workflows/maintenance.md",
+    "_workflows/media.md",
+    "_workflows/library.md",
+    "_tools/README.md",
+    "_schema-media.md"
+  ]
+}

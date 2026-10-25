@@ -1,44 +1,14 @@
-# kb-video-analyze.py
+# Video helper compatibility
 
-Analyze a video URL into a structured markdown/JSON artifact for KB ingest. The
-tool does not create source notes and does not write into `_media/`; keyframes
-stay in the working directory.
+The old URL/downloader and direct-model summary/vision entrypoints are retired.
+They must fail before network, model or output side effects. Pure offline helper
+functions remain for bounded inspection; this file does not authorize fetching.
 
-```bash
-_tools/.venv/bin/python _tools/kb-video-analyze.py "https://www.youtube.com/watch?v=..." --json
-```
+For a specifically approved video, use `kb-media-capture.py` temporary staging
+and `kb-media-inspect.py` with the expected hash. See their contracts and media capture contract.
+Extraction uses explicitly installed local dependencies/cache, without implicit
+model downloads. Review sampled coverage and omissions before writing a note.
+A transcript or a few frames do not establish a complete visual review.
 
-Default output is `<workdir>/analysis.md`. Use `--out PATH` to choose a stable
-artifact path and `--workdir DIR` to keep downloads/keyframes.
-
-Useful modes:
-
-```bash
-# Captions first, Whisper fallback; no frame work.
-_tools/.venv/bin/python _tools/kb-video-analyze.py URL --transcript-only --out /tmp/video-analysis.md
-
-# Add OCR over deduped keyframes.
-_tools/.venv/bin/python _tools/kb-video-analyze.py URL --workdir /tmp/video-work --max-frames 40
-
-# Optional Claude CLI figure descriptions and DeepSeek transcript summary.
-source ~/.config/ai/deepseek.env
-_tools/.venv/bin/python _tools/kb-video-analyze.py URL --vision --summary
-```
-
-Flags:
-
-- `--json`: emit the same structured data to stdout.
-- `--transcript-only`: skip video/keyframe/OCR/vision work.
-- `--no-ocr`: keep distinct keyframes but skip tesseract OCR.
-- `--vision`: describe likely figures/charts with `claude -p` and local image
-  reads; capped to 15 candidate frames.
-- `--summary`: summarize transcript text with DeepSeek
-  (`DEEPSEEK_API_KEY`, model `deepseek-v4-flash`).
-- `--whisper-model`, `--device`: configure faster-whisper fallback; defaults are
-  `base` and `cpu`.
-- `--max-frames`: cap distinct saved keyframes; default `40`.
-
-The script degrades gracefully: missing captions, ffmpeg, tesseract, model
-downloads, Claude CLI, or DeepSeek credentials produce stderr warnings and a
-partial artifact. It exits non-zero only when it cannot get any useful metadata
-or analysis content.
+Retention and cleanup are separate explicit decisions. Never run the historical
+unbounded URL analyzer as a fallback.

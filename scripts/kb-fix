@@ -21,21 +21,14 @@ unrendered_math
     Only fires inside the 'LaTeX: ...' label pattern — backtick spans inside
     tables or fenced code blocks are left alone.
 
-missing_author
-    Inserts `author: kb-bot` as the first frontmatter field when `author:` is
-    absent from a note file under topics/ or projects/.
+missing_author / infer_frontmatter / stub_frontmatter
+    Retired.  These historical fixers could grant ownership or infer
+    authoritative metadata from a path.  They are rejected and never run.
 
-infer_frontmatter
-    Adds missing `type:` and `topic:` frontmatter fields, inferred from the
-    file's path within the KB (topics/<name>/… → type: note, topic: <name>).
-    Will not overwrite existing values.
-
-stub_frontmatter
-    For files with NO frontmatter block at all, prepends a minimal YAML block
-    with `type:`, `topic:`, `created:`, and `modified:` inferred from the file
-    path and today's date.  Only acts on files under topics/ or projects/.
-    Skips _summary.md, _index.md, README.md and daily notes (they have their
-    own schema conventions).
+All active fixers require an existing, complete frontmatter block with exactly
+`author: kb-bot`, reject source paths and `type: source`, and operate only on
+the mutable `topics/` and `projects/` trees.  Missing, malformed, duplicate,
+or non-kb-bot authorship is a refusal, not an invitation to adopt the file.
 
 quote_frontmatter_colon
     Wraps unquoted frontmatter scalar values that contain `: ` in double
@@ -47,23 +40,27 @@ Exit codes
 ----------
 0  nothing to fix (or --dry-run with no changes)
 1  changes applied (or --dry-run: changes would be applied)
-2  error
+2  safety refusal or other error (no unsafe file is written)
 """
 from __future__ import annotations
 
 import argparse
-import datetime as dt
+import importlib.util
 import json
 import os
 import re
+import stat
 import sys
 from dataclasses import dataclass, asdict
 from pathlib import Path
+from typing import Any
 
 # ── regex constants ────────────────────────────────────────────────────────────
 
 FENCE_START_RE = re.compile(r"^```")
-FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
+FRONTMATTER_RE = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n", re.DOTALL)
+FM_FIELD_RE = re.compile(r"^(?P<key>[A-Za-z_][A-Za-z0-9_-]*):(?:[ \t]+(?P<value>.*?))?[ \t]*$")
+TOPIC_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 # unrendered_math: matches a full line of the form "LaTeX: `...`"
 LATEX_LABEL_RE = re.compile(r"^LaTeX:\s+(.+)$")
@@ -74,32 +71,91 @@ TABLE_ROW_RE = re.compile(r"^\|")
 BACKTICK_BACKSLASH_RE = re.compile(r"`([^`]*\\[^`]*)`")
 
 
+class FixSafetyError(ValueError):
+    """The candidate cannot be safely changed by this tool."""
+
+
+_WRITE_GUARD: Any | None = None
+
+
 # ── KB root resolution (mirrors kb-lint) ──────────────────────────────────────
 
-def resolve_kb_root() -> Path:
-    env_val = os.environ.get("KB_ROOT")
-    if env_val:
-        return Path(os.path.expanduser(env_val)).resolve()
-    kb_config = Path.home() / ".claude/kb-config.md"
-    if kb_config.exists():
-        for line in kb_config.read_text().splitlines():
-            line = line.strip()
-            if line.startswith("KB_ROOT:") or line.startswith("KB_ROOT="):
-                val = line.split(":", 1)[-1] if ":" in line else line.split("=", 1)[-1]
-                val = val.strip().strip('"').strip("'")
-                if val:
-                    return Path(os.path.expanduser(val)).resolve()
-    return (Path.home() / "Documents/vault/knowledgebase").resolve()
+def _load_write_guard() -> Any:
+    """Load the shared KB filesystem guard without importing a hyphenated module."""
+    global _WRITE_GUARD
+    if _WRITE_GUARD is not None:
+        return _WRITE_GUARD
+
+    guard_path = Path(__file__).resolve().parents[1] / "knowledgebase" / "_tools" / "kb-write-guard.py"
+    if not guard_path.is_file():
+        raise FixSafetyError(
+            "shared write guard is unavailable; kb-fix will not apply changes"
+        )
+    spec = importlib.util.spec_from_file_location("kb_fix_write_guard", guard_path)
+    if spec is None or spec.loader is None:
+        raise FixSafetyError("cannot load the shared KB write guard")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    _WRITE_GUARD = module
+    return module
 
 
-def walk_kb(root: Path, topic: str | None = None) -> list[Path]:
-    base = root / "topics" / topic if topic else root
+def resolve_kb_root(override: str | Path | None = None) -> Path:
+    """Use the same fail-closed configuration contract as the other CLIs."""
+    directory = str(Path(__file__).resolve().parent)
+    if directory not in sys.path:
+        sys.path.insert(0, directory)
+    from kb_config import resolve_kb_root as resolve
+    return resolve(override)
+
+
+def _validate_topic(topic: str | None) -> None:
+    if topic is None:
+        return
+    if not TOPIC_SLUG_RE.fullmatch(topic):
+        raise FixSafetyError(
+            "topic must be one lowercase hyphen-separated slug; traversal and absolute paths are not allowed"
+        )
+
+
+def walk_kb(
+    root: Path,
+    topic: str | None = None,
+    *,
+    issues: list[tuple[str, str]] | None = None,
+) -> list[Path]:
+    """List Markdown candidates without following symlinked directories."""
+    _validate_topic(topic)
     out: list[Path] = []
-    for dirpath, dirnames, filenames in os.walk(base, followlinks=True):
-        dirnames[:] = [d for d in dirnames if d not in (".obsidian", ".git", ".trash")]
-        for fn in filenames:
-            if fn.endswith(".md"):
-                out.append(Path(dirpath) / fn)
+    bases = [root / "topics" / topic] if topic else [root / "topics", root / "projects"]
+    for base in bases:
+        if base.is_symlink():
+            if issues is not None:
+                issues.append((base.relative_to(root).as_posix(), "symlink scan directory"))
+            continue
+        if not base.exists():
+            continue
+        try:
+            if base.resolve(strict=True) != base:
+                raise FixSafetyError(f"scan path is symlinked: {base}")
+        except FileNotFoundError as exc:
+            raise FixSafetyError(f"scan path does not exist: {base}") from exc
+
+        for dirpath, dirnames, filenames in os.walk(base, followlinks=False):
+            kept_dirs: list[str] = []
+            for dirname in dirnames:
+                candidate = Path(dirpath) / dirname
+                if candidate.is_symlink():
+                    if issues is not None:
+                        issues.append((candidate.relative_to(root).as_posix(), "symlink directory"))
+                    continue
+                if dirname in (".obsidian", ".git", ".trash"):
+                    continue
+                kept_dirs.append(dirname)
+            dirnames[:] = kept_dirs
+            for fn in filenames:
+                if fn.endswith(".md"):
+                    out.append(Path(dirpath) / fn)
     return out
 
 
@@ -185,126 +241,107 @@ def _fix_unrendered_math(text: str) -> tuple[str, int, list[str]]:
     return "\n".join(out), changes, samples
 
 
-def _fix_missing_author(text: str, rel: str, author: str = "kb-bot") -> tuple[str, int, list[str]]:
-    """Insert 'author: <author>' into frontmatter if the field is absent."""
-    # Only act on notes under topics/ or projects/
-    if not (rel.startswith("topics/") or rel.startswith("projects/")):
-        return text, 0, []
-
-    m = FRONTMATTER_RE.match(text)
-    if not m:
-        return text, 0, []
-
-    fm_raw = m.group(1)
-    if "author:" in fm_raw:
-        return text, 0, []
-
-    fm_lines = fm_raw.split("\n")
-    fm_lines.insert(0, f"author: {author}")
-    new_fm = "\n".join(fm_lines)
-    new_text = f"---\n{new_fm}\n---\n{text[m.end():]}"
-    return new_text, 1, [f"added author: {author}"]
-
-
-def _infer_type_and_topic(rel: str) -> tuple[str | None, str | None]:
-    """Return (type, topic) inferred from path, or (None, None) if unclear."""
-    parts = rel.split("/")
-    if parts[0] == "topics" and len(parts) >= 2:
-        topic = parts[1]
-        if parts[-1] == "_summary.md":
-            return "summary", topic
-        if "sources" in parts:
-            return "source", topic
-        return "note", topic
-    if parts[0] == "projects" and len(parts) >= 2:
-        topic = parts[1]
-        if parts[-1] == "_summary.md":
-            return "summary", topic
-        return "note", topic
-    return None, None
-
-
-def _fix_infer_frontmatter(text: str, rel: str) -> tuple[str, int, list[str]]:
-    """Add missing type: and topic: to frontmatter, inferred from file path."""
-    m = FRONTMATTER_RE.match(text)
-    if not m:
-        return text, 0, []
-
-    fm_raw = m.group(1)
-    inferred_type, inferred_topic = _infer_type_and_topic(rel)
-    additions: list[str] = []
-    samples: list[str] = []
-
-    if "type:" not in fm_raw and inferred_type:
-        additions.append(f"type: {inferred_type}")
-        samples.append(f"added type: {inferred_type}")
-    if "topic:" not in fm_raw and inferred_topic:
-        additions.append(f"topic: {inferred_topic}")
-        samples.append(f"added topic: {inferred_topic}")
-
-    if not additions:
-        return text, 0, []
-
-    fm_lines = fm_raw.split("\n")
-    fm_lines.extend(additions)
-    new_fm = "\n".join(fm_lines)
-    new_text = f"---\n{new_fm}\n---\n{text[m.end():]}"
-    return new_text, len(additions), samples
-
-
-_SKIP_STUB_NAMES = {"_summary.md", "_index.md", "README.md"}
-
-
-def _is_infrastructure(rel: str) -> bool:
-    """Mirror kb-lint's _is_infrastructure_file: skip auto-generated / schema files."""
-    basename = rel.split("/")[-1]
-    if basename.startswith("_"):       # _log.md, _schema.md, etc.
-        return True
-    if "_Index_of_" in basename:       # auto-generated vault index files
-        return True
-    if rel.startswith("clippings/"):
-        return True
-    if rel.startswith("readinglist/"):
-        return True
-    return False
-
-
-def _fix_stub_frontmatter(text: str, rel: str) -> tuple[str, int, list[str]]:
-    """Prepend a minimal YAML frontmatter block to files that have none at all.
-
-    Only acts on files under topics/ or projects/ that are not _summary.md,
-    _index.md, README.md, daily notes, or infrastructure files.  Infers type
-    and topic from path; uses today's date for created/modified.
-    """
-    parts = rel.split("/")
-    if parts[0] not in ("topics", "projects"):
-        return text, 0, []
-    if parts[-1] in _SKIP_STUB_NAMES:
-        return text, 0, []
-    if "/notes/daily/" in rel:
-        return text, 0, []
-    if _is_infrastructure(rel):
-        return text, 0, []
-
-    # Only fire when there is genuinely no frontmatter
-    if FRONTMATTER_RE.match(text):
-        return text, 0, []
-
-    inferred_type, inferred_topic = _infer_type_and_topic(rel)
-    today = dt.date.today().isoformat()
-    fields = ["author: kb-bot", f"created: {today}", f"modified: {today}"]
-    if inferred_type:
-        fields.append(f"type: {inferred_type}")
-    if inferred_topic:
-        fields.append(f"topic: {inferred_topic}")
-
-    new_fm = "\n".join(fields)
-    new_text = f"---\n{new_fm}\n---\n\n{text}"
-    sample = f"stub added ({', '.join(f.split(':')[0] for f in fields)})"
-    return new_text, 1, [sample]
-
-
 _FM_KEY_VALUE_RE = re.compile(r'^(\w[\w-]*):\s+(.+)$')
+
+
+def _strip_yaml_comment(value: str) -> str:
+    """Strip a YAML-style inline comment without interpreting quoted text."""
+    quote: str | None = None
+    escaped = False
+    for index, character in enumerate(value):
+        if quote == '"' and escaped:
+            escaped = False
+            continue
+        if quote == '"' and character == "\\":
+            escaped = True
+            continue
+        if quote and character == quote:
+            quote = None
+            continue
+        if not quote and character in {'"', "'"}:
+            quote = character
+            continue
+        if not quote and character == "#" and (index == 0 or value[index - 1].isspace()):
+            return value[:index].rstrip()
+    return value.strip()
+
+
+def _plain_frontmatter_scalar(value: str | None) -> str | None:
+    """Return a deliberately narrow scalar representation, or ``None``."""
+    if value is None:
+        return None
+    value = _strip_yaml_comment(value.strip())
+    if not value:
+        return None
+    if value.startswith('"'):
+        if not value.endswith('"') or len(value) < 2:
+            return None
+        inner = value[1:-1]
+        if '\\' in inner:
+            return None
+        return inner
+    if value.startswith("'"):
+        if not value.endswith("'") or len(value) < 2:
+            return None
+        return value[1:-1].replace("''", "'")
+    if value[0] in "[{|>&*!" or any(character in value for character in (":", "\n", "\r")):
+        return None
+    return value
+
+
+def _frontmatter_fields(text: str, rel: str) -> dict[str, list[str | None]]:
+    """Read only top-level frontmatter fields needed for the safety gate.
+
+    This intentionally does not parse all YAML: ``quote_frontmatter_colon`` is
+    specifically allowed to repair an otherwise-invalid scalar such as
+    ``title: A: B``.  Ownership and source classification still use strict,
+    single-key scalar checks, so malformed or ambiguous identity never grants
+    write permission.
+    """
+    if not (rel.startswith("topics/") or rel.startswith("projects/")):
+        raise FixSafetyError("candidate is outside the mutable topics/projects trees")
+    match = FRONTMATTER_RE.match(text)
+    if not match:
+        raise FixSafetyError("candidate has no complete frontmatter block")
+
+    fields: dict[str, list[str | None]] = {}
+    for line in match.group(1).splitlines():
+        if not line or line[0].isspace() or line.lstrip().startswith("#"):
+            continue
+        field = FM_FIELD_RE.match(line)
+        if field is None:
+            continue
+        key = field.group("key")
+        fields.setdefault(key, []).append(field.group("value"))
+    return fields
+
+
+def _assert_owned_mutable(text: str, rel: str) -> None:
+    """Fail closed unless the note has unambiguous kb-bot ownership."""
+    parts = Path(rel).parts
+    if len(parts) < 2 or parts[0] not in {"topics", "projects"}:
+        raise FixSafetyError("candidate path is outside the mutable topics/projects trees")
+    if any(part in {"", ".", ".."} for part in parts) or not TOPIC_SLUG_RE.fullmatch(parts[1]):
+        raise FixSafetyError("candidate path contains an invalid or traversing topic/project slug")
+    if "sources" in parts:
+        raise FixSafetyError("source paths are immutable and are not eligible for kb-fix")
+
+    fields = _frontmatter_fields(text, rel)
+    authors = fields.get("author", [])
+    if len(authors) != 1:
+        raise FixSafetyError("candidate ownership is missing or has ambiguous author frontmatter")
+    if _plain_frontmatter_scalar(authors[0]) != "kb-bot":
+        raise FixSafetyError("candidate is not explicitly owned by author: kb-bot")
+
+    types = fields.get("type", [])
+    if len(types) > 1:
+        raise FixSafetyError("candidate type frontmatter is ambiguous")
+    if types:
+        parsed_type = _plain_frontmatter_scalar(types[0])
+        if parsed_type is None:
+            raise FixSafetyError("candidate type frontmatter is not an unambiguous scalar")
+        if parsed_type.casefold() == "source":
+            raise FixSafetyError("source notes are immutable and are not eligible for kb-fix")
 
 
 def _fix_quote_frontmatter_colon(text: str) -> tuple[str, int, list[str]]:
@@ -313,7 +350,8 @@ def _fix_quote_frontmatter_colon(text: str) -> tuple[str, int, list[str]]:
     if not m:
         return text, 0, []
 
-    lines = m.group(1).split("\n")
+    line_ending = "\r\n" if "\r\n" in m.group(0) else "\n"
+    lines = m.group(1).splitlines()
     new_lines: list[str] = []
     changes = 0
     samples: list[str] = []
@@ -339,62 +377,157 @@ def _fix_quote_frontmatter_colon(text: str) -> tuple[str, int, list[str]]:
     if not changes:
         return text, 0, []
 
-    new_fm = "\n".join(new_lines)
-    return f"---\n{new_fm}\n---\n{text[m.end():]}", changes, samples
+    new_fm = line_ending.join(new_lines)
+    return (
+        f"---{line_ending}{new_fm}{line_ending}---{line_ending}{text[m.end():]}",
+        changes,
+        samples,
+    )
 
 
-# ── Fixer registry ────────────────────────────────────────────────────────────
+# ── Fixer registry and guarded application ───────────────────────────────────
 
-ALL_FIXERS = ["unrendered_math", "missing_author", "infer_frontmatter", "stub_frontmatter", "quote_frontmatter_colon"]
+SAFE_FIXERS = ["unrendered_math", "quote_frontmatter_colon"]
+RETIRED_FIXERS = {"missing_author", "infer_frontmatter", "stub_frontmatter"}
+ALL_FIXERS = SAFE_FIXERS
 
 FIXER_DESCRIPTIONS = {
     "unrendered_math": "LaTeX: `\\cmd` patterns → $$\\cmd$$ display math",
-    "missing_author": "add author: kb-bot to notes missing the field",
-    "infer_frontmatter": "add type: and topic: inferred from file path",
-    "stub_frontmatter": "prepend minimal frontmatter to files with none at all",
     "quote_frontmatter_colon": "quote frontmatter values containing ': ' to prevent YAML parse errors",
 }
 
 
-def apply_fixers(path: Path, rel: str, fixers: list[str], dry_run: bool) -> list[FixResult]:
+def _path_identity(path: Path) -> tuple[int, int]:
+    """Return a regular, singly-linked path identity without following links."""
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
-    except OSError as e:
-        print(f"kb-fix: cannot read {rel}: {e}", file=sys.stderr)
-        return []
+        info = path.stat(follow_symlinks=False)
+    except OSError as exc:
+        raise FixSafetyError(f"cannot inspect candidate path: {exc}") from exc
+    if stat.S_ISLNK(info.st_mode):
+        raise FixSafetyError("candidate path is a symlink")
+    if not stat.S_ISREG(info.st_mode):
+        raise FixSafetyError("candidate path is not a regular file")
+    if info.st_nlink != 1:
+        raise FixSafetyError("candidate path is multiply linked")
+    return info.st_dev, info.st_ino
+
+
+def _candidate_root(path: Path, rel: str, kb_root: Path | None) -> Path:
+    """Resolve a root for the public helper while rejecting traversal."""
+    if kb_root is not None:
+        root = Path(kb_root)
+    else:
+        # Preserve the historical helper signature for offline callers.  The
+        # CLI always supplies an explicit resolved root before reaching here.
+        root = path.absolute()
+        for _ in Path(rel).parts:
+            root = root.parent
+    if Path(rel).is_absolute() or ".." in Path(rel).parts:
+        raise FixSafetyError("candidate relative path contains traversal")
+    return root
+
+
+def _read_owned_candidate(
+    path: Path,
+    rel: str,
+    kb_root: Path,
+    write_guard: Any,
+) -> tuple[str, tuple[int, int]]:
+    """Read and classify one candidate through the shared guard."""
+    try:
+        candidate = path.absolute()
+        candidate.relative_to(kb_root)
+    except (ValueError, OSError) as exc:
+        raise FixSafetyError("candidate path is outside the selected KB root") from exc
+    try:
+        if candidate.resolve(strict=True) != candidate:
+            raise FixSafetyError("candidate path contains a symlink component")
+    except (FileNotFoundError, OSError) as exc:
+        raise FixSafetyError(f"candidate path cannot be resolved safely: {exc}") from exc
+
+    identity = _path_identity(candidate)
+    try:
+        text = write_guard.regular_text(candidate)
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise FixSafetyError(f"candidate cannot be read safely: {exc}") from exc
+    _assert_owned_mutable(text, rel)
+    return text, identity
+
+
+def apply_fixers(
+    path: Path,
+    rel: str,
+    fixers: list[str],
+    dry_run: bool,
+    *,
+    kb_root: Path | None = None,
+    write_guard: Any | None = None,
+    lock_held: bool = False,
+) -> list[FixResult]:
+    """Apply only safe fixers to an explicitly owned mutable candidate.
+
+    Apply mode requires the caller to hold the shared KB lock.  The candidate
+    is read and classified again immediately before the guarded atomic write,
+    so a concurrent cooperative writer or path replacement cannot be silently
+    overwritten.  Dry-run remains read-only but uses the same path and
+    ownership checks.
+    """
+    unsupported = [fixer for fixer in fixers if fixer not in SAFE_FIXERS]
+    if unsupported:
+        if any(fixer in RETIRED_FIXERS for fixer in unsupported):
+            raise FixSafetyError(
+                "retired ownership/metadata fixers are disabled: " + ", ".join(unsupported)
+            )
+        raise FixSafetyError("unknown or unsafe fixer: " + ", ".join(unsupported))
+
+    guard = write_guard or _load_write_guard()
+    root = _candidate_root(path, rel, kb_root)
+    try:
+        root = guard.canonical_root(root)
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise FixSafetyError(f"unsafe KB root: {exc}") from exc
+
+    candidate = path if path.is_absolute() else root / path
+    text, identity = _read_owned_candidate(candidate, rel, root, guard)
 
     results: list[FixResult] = []
     current = text
-
     for fixer in fixers:
         if fixer == "unrendered_math":
             new, count, samples = _fix_unrendered_math(current)
-        elif fixer == "missing_author":
-            new, count, samples = _fix_missing_author(current, rel)
-        elif fixer == "infer_frontmatter":
-            new, count, samples = _fix_infer_frontmatter(current, rel)
-        elif fixer == "stub_frontmatter":
-            new, count, samples = _fix_stub_frontmatter(current, rel)
-        elif fixer == "quote_frontmatter_colon":
+        else:  # quote_frontmatter_colon
             new, count, samples = _fix_quote_frontmatter_colon(current)
-        else:
-            continue
 
         if count:
             results.append(FixResult(file=rel, fixer=fixer, changes=count, preview=samples))
             current = new  # chain fixers on the same text
 
-    if results and not dry_run and current != text:
-        path.write_text(current, encoding="utf-8")
+    if results and not dry_run:
+        if not lock_held:
+            raise FixSafetyError("apply mode requires the shared KB write lock")
+        latest, latest_identity = _read_owned_candidate(candidate, rel, root, guard)
+        if latest != text or latest_identity != identity:
+            raise FixSafetyError("candidate changed during fix planning; refusing to overwrite it")
+        try:
+            guard.atomic_write(candidate, current)
+        except (OSError, ValueError, RuntimeError) as exc:
+            raise FixSafetyError(f"guarded atomic write refused: {exc}") from exc
 
     return results
 
 
 # ── Output ────────────────────────────────────────────────────────────────────
 
-def render_text(results: list[FixResult], dry_run: bool, fixers: list[str], files_scanned: int) -> str:
+def render_text(
+    results: list[FixResult],
+    dry_run: bool,
+    fixers: list[str],
+    files_scanned: int,
+    blocked: list[tuple[str, str]] | None = None,
+) -> str:
     mode = "DRY RUN — no files written" if dry_run else "changes applied in-place"
     out = [f"# kb-fix  ({mode})", ""]
+    blocked = blocked or []
 
     by_fixer: dict[str, list[FixResult]] = {}
     for r in results:
@@ -415,20 +548,35 @@ def render_text(results: list[FixResult], dry_run: bool, fixers: list[str], file
                 out.append(f"    ↳ {s}")
         out.append("")
 
+    if blocked:
+        out.append(f"## Blocked  ({len(blocked)} candidate{'s' if len(blocked) != 1 else ''})")
+        out.append("")
+        for file, reason in blocked:
+            out.append(f"- `{file}` — {reason}")
+        out.append("")
+
     out.append("## Summary")
     out.append(f"- {files_scanned} files scanned")
     out.append(f"- {total_changes} total change{'s' if total_changes != 1 else ''} across {len(results)} file{'s' if len(results) != 1 else ''}")
-    if not results:
+    out.append(f"- {len(blocked)} candidate{'s' if len(blocked) != 1 else ''} refused by the safety gate")
+    if not results and not blocked:
         out.append("- nothing to fix")
     return "\n".join(out)
 
 
-def render_json(results: list[FixResult], dry_run: bool, files_scanned: int) -> str:
+def render_json(
+    results: list[FixResult],
+    dry_run: bool,
+    files_scanned: int,
+    blocked: list[tuple[str, str]] | None = None,
+) -> str:
+    blocked = blocked or []
     return json.dumps({
         "dry_run": dry_run,
         "files_scanned": files_scanned,
         "total_changes": sum(r.changes for r in results),
         "results": [asdict(r) for r in results],
+        "blocked": [{"file": file, "reason": reason} for file, reason in blocked],
     }, indent=2)
 
 
@@ -439,14 +587,18 @@ def main() -> int:
     p.add_argument("--fix", metavar="FIXER",
                    help=f"fixer to apply: {', '.join(ALL_FIXERS)}, or 'all'")
     p.add_argument("--topic", help="restrict to one topic directory")
+    p.add_argument("--kb-root", help="explicit KB root (also configurable through KB_ROOT)")
     p.add_argument("--dry-run", action="store_true", help="preview changes without writing")
     fmt = p.add_mutually_exclusive_group()
     fmt.add_argument("--json", action="store_true")
     args = p.parse_args()
 
-    root = resolve_kb_root()
-    if not root.is_dir():
-        print(f"kb-fix: KB root not found: {root}", file=sys.stderr)
+    try:
+        write_guard = _load_write_guard()
+        root = write_guard.canonical_root(resolve_kb_root(args.kb_root))
+        _validate_topic(args.topic)
+    except (FixSafetyError, OSError, ValueError, RuntimeError) as exc:
+        print(f"kb-fix: safety gate: {exc}", file=sys.stderr)
         return 2
 
     # Resolve which fixers to run
@@ -457,31 +609,71 @@ def main() -> int:
         fixers = ALL_FIXERS
     elif args.fix in ALL_FIXERS:
         fixers = [args.fix]
+    elif args.fix in RETIRED_FIXERS:
+        print(
+            f"kb-fix: fixer '{args.fix}' is retired because it could adopt or infer ownership; no files written",
+            file=sys.stderr,
+        )
+        return 2
     else:
         print(f"kb-fix: unknown fixer '{args.fix}'. Choose from: {', '.join(ALL_FIXERS)}, all", file=sys.stderr)
         return 2
 
-    paths = walk_kb(root, args.topic)
+    scan_issues: list[tuple[str, str]] = []
+    try:
+        paths = walk_kb(root, args.topic, issues=scan_issues)
+    except (FixSafetyError, OSError, ValueError, RuntimeError) as exc:
+        print(f"kb-fix: safety gate: {exc}", file=sys.stderr)
+        return 2
     all_results: list[FixResult] = []
+    blocked: list[tuple[str, str]] = list(scan_issues)
+    dry = args.dry_run or args.fix is None
 
-    for path in paths:
-        rel = path.relative_to(root).as_posix()
-        # In list mode (no --fix given) always dry-run
-        dry = args.dry_run or args.fix is None
-        results = apply_fixers(path, rel, fixers, dry_run=dry)
-        all_results.extend(results)
+    def process_paths(lock_held: bool) -> None:
+        for path in paths:
+            try:
+                rel = path.relative_to(root).as_posix()
+            except ValueError:
+                blocked.append((str(path), "candidate path is outside the selected KB root"))
+                continue
+            try:
+                results = apply_fixers(
+                    path,
+                    rel,
+                    fixers,
+                    dry_run=dry,
+                    kb_root=root,
+                    write_guard=write_guard,
+                    lock_held=lock_held,
+                )
+            except FixSafetyError as exc:
+                blocked.append((rel, str(exc)))
+                continue
+            all_results.extend(results)
+
+    if dry:
+        process_paths(lock_held=False)
+    else:
+        try:
+            with write_guard.write_lock(root, nonblocking=True):
+                process_paths(lock_held=True)
+        except (OSError, ValueError, RuntimeError) as exc:
+            print(f"kb-fix: shared write lock refused: {exc}", file=sys.stderr)
+            return 2
 
     if args.json:
-        print(render_json(all_results, args.dry_run or args.fix is None, len(paths)))
+        print(render_json(all_results, dry, len(paths), blocked))
     else:
         if args.fix is None:
             # List mode: show what would be fixed
-            print(render_text(all_results, dry_run=True, fixers=fixers, files_scanned=len(paths)))
+            print(render_text(all_results, dry_run=True, fixers=fixers, files_scanned=len(paths), blocked=blocked))
             print()
             print("Run `kb-fix --fix <fixer>` or `kb-fix --fix all` to apply.")
         else:
-            print(render_text(all_results, args.dry_run, fixers, len(paths)))
+            print(render_text(all_results, dry, fixers, len(paths), blocked))
 
+    if blocked:
+        return 2
     return 1 if all_results else 0
 
 

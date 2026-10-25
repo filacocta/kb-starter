@@ -81,6 +81,10 @@ def discover_media(kb_root: Path, fetch_url: str) -> tuple[list[dict[str, Any]],
         errors = payload.get("errors") if isinstance(payload, dict) else None
         if isinstance(errors, list) and errors:
             return [], [f"media discovery failed: {error}" for error in errors]
+        # --discover exits 1 on a successful fetch that found no media; that is
+        # a normal outcome for text-only sources, not a failure.
+        if isinstance(payload, dict) and payload.get("fetched"):
+            return [], []
         return [], [f"media discovery exited {result.returncode}"]
 
     media = payload.get("media") if isinstance(payload, dict) else None
@@ -90,7 +94,7 @@ def discover_media(kb_root: Path, fetch_url: str) -> tuple[list[dict[str, Any]],
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Prepare one KB ingestion item.")
     parser.add_argument("--url", required=True)
-    parser.add_argument("--kb-root", default=str(Path.home() / "Vault" / "knowledgebase"))
+    parser.add_argument("--kb-root", default=str(Path(__file__).resolve().parents[1]))
     parser.add_argument("--skip-media", action="store_true")
     return parser
 
@@ -101,14 +105,18 @@ def main(argv: list[str] | None = None) -> int:
 
     kb_seen = load_kb_seen(kb_root)
     canonical_url = kb_seen.normalize(args.url)
-    seen_index = {norm: rel for norm, rel in kb_seen.iter_origins(kb_root)}
-    seen = seen_index.get(canonical_url)
+    # URL identity is shared with completion/publication: this includes only
+    # explicitly governed aliases, never a broad host rewrite or page-body
+    # lookup.  A malformed registry raises before any media/network call.
+    seen = kb_seen.source_for_url(args.url, kb_root)
     fetch_url, mirror_applied = mirror_fetch_url(canonical_url)
 
     errors: list[str] = []
     media: list[dict[str, Any]] = []
-    if not args.skip_media:
-        media, media_errors = discover_media(kb_root, fetch_url)
+    if seen is None and not args.skip_media:
+        # Pass the canonical URL: discovery applies its own transport identity rewrite,
+        # so rewriting here too would double-mirror the request.
+        media, media_errors = discover_media(kb_root, canonical_url)
         errors.extend(media_errors)
 
     print(

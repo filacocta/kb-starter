@@ -7,7 +7,8 @@ type: meta
 
 # KB System Todo
 
-Infrastructure and tooling tasks for the KB system itself — not for research topics (those go in `_dive-queue.md` and topic reading lists).
+Infrastructure and tooling tasks for the KB system itself — not for research topics
+(those go in topic reading lists or `research-ideas.md`; `_dive-queue.md` is generated).
 
 ---
 

@@ -16,9 +16,11 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -33,19 +35,164 @@ import yaml
 # Constants
 # ---------------------------------------------------------------------------
 
-KB_ROOT_DEFAULT = Path.home() / "Documents" / "worklog" / "knowledgebase"  # adjust to your KB root, or override with --kb-root
 SKILL_DIR = Path(__file__).resolve().parent
 ALIASES_FILE = SKILL_DIR / "aliases.yaml"
 TAG_RULES_FILE = SKILL_DIR / "tag-rules.yaml"
 
 # Obsidian CLI — used by Pass 4 (incoming-refresh) to fetch backlinks.
 # Falls back to filesystem scan if unavailable.
-OBSIDIAN_CLI = Path.home() / ".local/bin/obsidian"
+OBSIDIAN_CLI: Path | None = None
+
+# Set in main() so safe_write can enforce the same root boundary as the CLI.
+ACTIVE_KB_ROOT: Path | None = None
+
+# Loaded from the configured KB for apply mode only.  Dry runs stay usable in
+# a source checkout, while writes require the shared lock/atomic-write guard.
+WRITE_GUARD = None
 
 # Cap on `incoming:` list size per note. Highly-referenced anchors (topic
 # entities) can have 50+ backlinks; storing all of them would bloat frontmatter
 # without improving usability. The top-N by some ordering are kept.
 INCOMING_MAX = 10
+
+
+def _lexical_path(value: str, base: Path | None = None) -> Path:
+    """Expand a path without resolving symlinks or hiding ``..`` components."""
+    path = Path(os.path.expanduser(value))
+    if not path.is_absolute():
+        path = (base if base is not None else Path.cwd()) / path
+    return Path(os.path.abspath(path))
+
+
+def _reject_symlink_components(path: Path) -> None:
+    """Reject symlink path components before reading or scanning a path."""
+    cursor = Path(path.anchor)
+    for part in path.parts:
+        if part == path.anchor:
+            continue
+        cursor /= part
+        try:
+            if cursor.is_symlink():
+                raise ValueError(f"path must not contain a symlink: {cursor}")
+        except OSError as exc:
+            raise ValueError(f"cannot inspect configured path: {cursor}") from exc
+
+
+def _config_root(path: Path) -> Path | None:
+    """Read exactly one KB_ROOT from a config; never print its contents."""
+    _reject_symlink_components(path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise ValueError(f"KB config cannot be read: {path}") from exc
+    values: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("KB_ROOT:"):
+            value = stripped.split(":", 1)[1].strip().strip("\"'")
+        elif stripped.startswith("KB_ROOT="):
+            value = stripped.split("=", 1)[1].strip().strip("\"'")
+        else:
+            continue
+        if not value:
+            raise ValueError(f"KB config has an empty KB_ROOT: {path}")
+        values.append(value)
+    if not values:
+        raise ValueError(f"KB config has no usable KB_ROOT: {path}")
+    if len(values) != 1:
+        raise ValueError(f"KB config has duplicate KB_ROOT settings: {path}")
+    root = _lexical_path(values[0], path.parent)
+    _reject_symlink_components(root)
+    return root
+
+
+def _validated_root(value: str, source: str) -> Path:
+    """Validate one explicit root and never fall through to another config."""
+    if not value.strip():
+        raise ValueError(f"{source} is empty; set an explicit KB root or config")
+    root = _lexical_path(value)
+    _reject_symlink_components(root)
+    if not root.is_dir():
+        raise FileNotFoundError(f"{source} is not a directory: {root}")
+    return root
+
+
+def _load_write_guard(kb_root: Path):
+    """Load the KB's shared write guard for apply mode.
+
+    Relink is also distributed as a standalone skill, so importing a checkout
+    relative helper would be unsafe. The configured KB must provide the guard
+    next to its other tools; otherwise apply is disabled rather than falling
+    back to an uncoordinated writer.
+    """
+    guard_path = kb_root / "_tools" / "kb-write-guard.py"
+    if guard_path.is_symlink() or not guard_path.is_file():
+        raise ValueError(f"shared write guard is missing: {guard_path}")
+    try:
+        if guard_path.resolve(strict=True) != guard_path:
+            raise ValueError(f"shared write guard path contains a symlink: {guard_path}")
+        spec = importlib.util.spec_from_file_location(
+            "kb_relink_write_guard", guard_path
+        )
+        if spec is None or spec.loader is None:
+            raise ValueError("shared write guard cannot be loaded")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError(f"shared write guard cannot be loaded: {guard_path}") from exc
+    for name in ("canonical_root", "write_lock", "atomic_write"):
+        if not callable(getattr(module, name, None)):
+            raise ValueError(f"shared write guard lacks {name}: {guard_path}")
+    return module
+
+
+def resolve_default_kb_root() -> Path:
+    """Resolve a portable default; invalid configuration fails closed."""
+    if "KB_ROOT" in os.environ:
+        return _validated_root(os.environ["KB_ROOT"], "KB_ROOT")
+
+    raw_config_values = [os.environ.get(name) for name in ("KB_CONFIG", "KB_CONFIG_PATH")
+                         if name in os.environ]
+    if any(value is None or not value.strip() for value in raw_config_values):
+        raise ValueError("KB_CONFIG/KB_CONFIG_PATH is empty; set a valid config path")
+    config_values = [value for value in raw_config_values if value is not None]
+    if config_values:
+        config_paths = [_lexical_path(value) for value in config_values]
+        if len({str(path) for path in config_paths}) > 1:
+            raise ValueError("KB_CONFIG and KB_CONFIG_PATH name different files; choose one")
+        config = config_paths[0]
+        if not config.is_file() or config.is_symlink():
+            raise FileNotFoundError(f"explicit KB config not found: {config}")
+        root = _config_root(config)
+        if root is None:
+            raise ValueError(f"explicit KB config has no usable KB_ROOT: {config}")
+        return root
+
+    selected = os.environ.get("KB_AGENT", "").strip().lower()
+    if selected and selected not in {"claude", "codex"}:
+        raise ValueError("unsupported KB_AGENT; choose claude or codex")
+    home = Path.home()
+    codex_home = Path(os.environ.get("CODEX_HOME", str(home / ".codex"))).expanduser()
+    claude_home = Path(os.environ.get("CLAUDE_HOME", str(home / ".claude"))).expanduser()
+    config_candidates = ([codex_home / "kb-config.md"] if selected == "codex" else
+                         [claude_home / "kb-config.md"] if selected == "claude" else
+                         [codex_home / "kb-config.md", claude_home / "kb-config.md"])
+    existing = [path for path in config_candidates if path.exists()]
+    if len(existing) > 1:
+        raise ValueError("ambiguous KB config; set KB_AGENT or KB_CONFIG explicitly")
+    if existing:
+        if existing[0].is_symlink():
+            raise ValueError(f"KB config must not be a symlink: {existing[0]}")
+        root = _config_root(existing[0])
+        if root is None:
+            raise ValueError(f"KB config has no usable KB_ROOT: {existing[0]}")
+        return root
+    raise FileNotFoundError(
+        "no KB root configured; set KB_ROOT or KB_CONFIG/KB_CONFIG_PATH "
+        "(or install a selected agent config)"
+    )
 
 # Structural files at the KB root or topic root that are NEVER scanned/edited
 # (they're auto-generated, machine-managed, or hold rules/schema). NOTE that
@@ -59,10 +206,8 @@ STRUCTURAL_FILENAMES = {
 EXCLUDE_FILENAMES = {"README.md", "reading-list.md"}
 EXCLUDE_DIRS = {".obsidian", ".git", ".trash", "bases", "_research-inbox", "reading-list"}
 # Specific files that must never be touched (machine-managed / append-only).
-EXCLUDE_PATHS = {
-    "topics/personal-notes/notes/entities/mark-todos.md",
-}
-EXCLUDE_DAILY = ("topics/personal-notes/notes/daily/",)
+EXCLUDE_PATHS: set[str] = set()
+EXCLUDE_DAILY: tuple[str, ...] = ()
 
 # Generic phrases that must never be auto-linked even if a slug matches them.
 # Plurals included because the slug-derivation step doesn't pluralize.
@@ -306,6 +451,8 @@ def build_anchor_inventory(kb_root: Path) -> dict[str, Anchor]:
     inventory: dict[str, Anchor] = {}
 
     for md_path in (kb_root / "topics").rglob("*.md"):
+        if md_path.is_symlink():
+            continue
         rel = str(md_path.relative_to(kb_root))
         if not is_anchor_source(rel):
             continue
@@ -496,6 +643,8 @@ def resolve_scope(kb_root: Path, scope: str | None) -> list[Path]:
                 raise FileNotFoundError(f"scope not found: {scope}")
     paths: list[Path] = []
     for p in base.rglob("*.md"):
+        if p.is_symlink():
+            continue
         rel = str(p.relative_to(kb_root))
         if is_excluded_path(rel):
             continue
@@ -977,10 +1126,45 @@ def safe_write(path: Path, content: str, original_mtime_ns: int) -> bool:
     True if written, False if a concurrent modification was detected and the
     write was skipped.
 
-    Critical for KB editing because Obsidian Sync continuously rewrites the
-    vault. A non-atomic write on a freshly synced file produces partial
-    content (the corruption seen on 2026-05-01 mid-relink — see synthesis).
+    Concurrent sync can rewrite a vault while this process is running. A
+    non-atomic write could produce partial content, so edits are replaced
+    atomically after an mtime check.
     """
+    # Apply mode is intentionally guarded in the driver as well as in the
+    # skill instructions. Never write through a symlink, outside the resolved
+    # KB root, or to a human-owned/source note.
+    if path.is_symlink():
+        print(f"error: refusing symlink target: {path}", file=sys.stderr)
+        return False
+    if ACTIVE_KB_ROOT is not None:
+        try:
+            path.relative_to(ACTIVE_KB_ROOT)
+        except ValueError:
+            print(f"error: refusing path outside KB root: {path}", file=sys.stderr)
+            return False
+        for parent in path.parents:
+            if parent == ACTIVE_KB_ROOT:
+                break
+            if parent.is_symlink():
+                print(f"error: refusing symlink parent: {parent}", file=sys.stderr)
+                return False
+    try:
+        fm, _, _ = split_frontmatter(path.read_text(encoding="utf-8"))
+    except OSError:
+        print(f"error: cannot inspect target before write: {path}", file=sys.stderr)
+        return False
+    if fm.get("author") != "kb-bot":
+        print(f"error: refusing non-kb-bot target: {path}", file=sys.stderr)
+        return False
+    if fm.get("type") == "source" or "sources" in path.parts:
+        print(f"error: refusing immutable source target: {path}", file=sys.stderr)
+        return False
+    if path.name in STRUCTURAL_FILENAMES or path.name in EXCLUDE_FILENAMES:
+        print(f"error: refusing structural/queue target: {path}", file=sys.stderr)
+        return False
+    if ACTIVE_KB_ROOT is not None and is_excluded_path(str(path.relative_to(ACTIVE_KB_ROOT))):
+        print(f"error: refusing excluded target: {path}", file=sys.stderr)
+        return False
     try:
         current_mtime = path.stat().st_mtime_ns
     except OSError:
@@ -992,6 +1176,18 @@ def safe_write(path: Path, content: str, original_mtime_ns: int) -> bool:
               f"(was mtime={original_mtime_ns}, now={current_mtime})",
               file=sys.stderr)
         return False
+    # Use the KB's shared lock and no-follow atomic writer when apply mode has
+    # loaded it. The local fallback remains for dry-run-adjacent callers and
+    # is never reachable from a guarded apply invocation.
+    if WRITE_GUARD is not None and ACTIVE_KB_ROOT is not None:
+        try:
+            with WRITE_GUARD.write_lock(ACTIVE_KB_ROOT):
+                WRITE_GUARD.atomic_write(path, content)
+        except Exception as exc:
+            print(f"warn: guarded write failed for {path}: {exc}", file=sys.stderr)
+            return False
+        return True
+
     # Write atomically: temp file in same dir, then os.rename. The rename is
     # atomic on POSIX, so readers either see the old file or the new one,
     # never a half-written state.
@@ -1009,6 +1205,37 @@ def safe_write(path: Path, content: str, original_mtime_ns: int) -> bool:
     return True
 
 
+def apply_target_error(path: Path, kb_root: Path, fm: dict | None = None) -> str | None:
+    """Return a clear reason why an apply target is outside the safe contract."""
+    if path.is_symlink():
+        return "target is a symlink"
+    try:
+        path.relative_to(kb_root)
+    except ValueError:
+        return "target is outside KB_ROOT"
+    for parent in path.parents:
+        if parent == kb_root:
+            break
+        if parent.is_symlink():
+            return f"parent is a symlink: {parent}"
+    if not path.is_file():
+        return "target is not a regular file"
+    if fm is None:
+        try:
+            fm, _, _ = split_frontmatter(path.read_text(encoding="utf-8"))
+        except OSError:
+            return "target cannot be read"
+    if fm.get("author") != "kb-bot":
+        return "target lacks author: kb-bot"
+    if fm.get("type") == "source" or "sources" in path.parts:
+        return "source notes are immutable"
+    if path.name in STRUCTURAL_FILENAMES or path.name in EXCLUDE_FILENAMES:
+        return "structural/queue targets are not mutable"
+    if is_excluded_path(str(path.relative_to(kb_root))):
+        return "target is excluded by the relink scope"
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Pass 4: incoming-link snapshot in frontmatter
 # ---------------------------------------------------------------------------
@@ -1018,7 +1245,7 @@ def query_backlinks(slug: str) -> list[str]:
     """Call `obsidian backlinks file=<slug>` and return list of paths.
     Returns [] if CLI is unavailable or returns nothing.
     """
-    if not OBSIDIAN_CLI.is_file():
+    if OBSIDIAN_CLI is None or not OBSIDIAN_CLI.is_file():
         return []
     try:
         result = subprocess.run(
@@ -1034,11 +1261,15 @@ def query_backlinks(slug: str) -> list[str]:
         line = line.strip()
         if not line:
             continue
-        # CLI returns paths relative to the vault root, e.g.
-        # "knowledgebase/topics/..."—we want the path relative to KB root
-        # ("topics/..."). Strip the leading "knowledgebase/" if present.
-        if line.startswith("knowledgebase/"):
-            line = line[len("knowledgebase/"):]
+        # CLI returns paths relative to the vault root. Strip the configured KB
+        # directory prefix when present so links remain portable.
+        prefixes = {"knowledgebase/"}
+        if ACTIVE_KB_ROOT is not None:
+            prefixes.add(ACTIVE_KB_ROOT.name.rstrip("/") + "/")
+        for prefix in prefixes:
+            if line.startswith(prefix):
+                line = line[len(prefix):]
+                break
         paths.append(line)
     return paths
 
@@ -1238,7 +1469,8 @@ def main() -> int:
     parser.add_argument("--max-per-section", type=int, default=1)
     parser.add_argument("--report-path", default=None,
                         help="Write a Markdown report to this path (defaults to <KB>/_relink-report.md when --mode=report-only)")
-    parser.add_argument("--kb-root", default=str(KB_ROOT_DEFAULT))
+    parser.add_argument("--kb-root", default=None,
+                        help="KB root (or use KB_ROOT / KB_CONFIG; explicit invalid values fail closed)")
     parser.add_argument("--json", action="store_true",
                         help="Always emit JSON to stdout (default when stdout is not a TTY)")
     parser.add_argument("--workers", type=int, default=None,
@@ -1260,10 +1492,37 @@ def main() -> int:
                              f"{INCOMING_MAX} paths per note. Implies use of `~/.local/bin/obsidian`.")
     args = parser.parse_args()
 
-    kb_root = Path(args.kb_root)
+    try:
+        kb_root = (_validated_root(args.kb_root, "explicit KB root")
+                   if args.kb_root else resolve_default_kb_root())
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     if not kb_root.is_dir():
         print(f"error: KB not found at {kb_root}", file=sys.stderr)
         return 2
+
+    global ACTIVE_KB_ROOT, OBSIDIAN_CLI, WRITE_GUARD
+    ACTIVE_KB_ROOT = kb_root
+    WRITE_GUARD = None
+    if args.mode == "apply":
+        try:
+            WRITE_GUARD = _load_write_guard(kb_root)
+            WRITE_GUARD.canonical_root(kb_root)
+        except Exception as exc:
+            print(f"error: apply disabled; shared write guard unavailable ({exc})", file=sys.stderr)
+            return 2
+    obsidian_value = os.environ.get("OBSIDIAN_CLI")
+    if obsidian_value:
+        OBSIDIAN_CLI = Path(os.path.expanduser(obsidian_value)).resolve()
+    else:
+        found_obsidian = shutil.which("obsidian")
+        OBSIDIAN_CLI = Path(found_obsidian).resolve() if found_obsidian else None
+
+    if args.mode == "apply":
+        if not args.scope:
+            print("error: apply requires an explicit topic, directory, or file scope", file=sys.stderr)
+            return 2
 
     do_links = not (args.tags_only or args.bare_topics_only)
     do_tags = not (args.links_only or args.bare_topics_only)
@@ -1358,6 +1617,21 @@ def main() -> int:
     total_incoming_updates = 0
 
     if args.mode == "apply":
+        unsafe_targets: list[str] = []
+        for res in raw_results:
+            if not (res["wikilink_props"] or res["tag_props"] or res["bare_topic_props"]):
+                continue
+            reason = apply_target_error(Path(res["path"]), kb_root, res.get("fm"))
+            if reason:
+                unsafe_targets.append(f"{res['rel']}: {reason}")
+        if unsafe_targets:
+            print("error: apply disabled; guard checks failed for target(s):", file=sys.stderr)
+            for item in unsafe_targets[:20]:
+                print(f"  - {item}", file=sys.stderr)
+            if len(unsafe_targets) > 20:
+                print(f"  - ... and {len(unsafe_targets) - 20} more", file=sys.stderr)
+            print("Run --mode dry-run to inspect proposals, or repair the migration contract first.", file=sys.stderr)
+            return 2
         for res in raw_results:
             wl = res["wikilink_props"]
             tg = res["tag_props"]
@@ -1484,12 +1758,32 @@ def main() -> int:
     if args.mode == "report-only" and args.report_path is None:
         args.report_path = str(kb_root / "_relink-report.md")
     if args.report_path:
+        report_path = Path(args.report_path).expanduser().resolve()
+        try:
+            report_path.relative_to(kb_root)
+        except ValueError:
+            print("error: report path must be inside KB_ROOT", file=sys.stderr)
+            return 2
+        for parent in report_path.parents:
+            if parent == kb_root:
+                break
+            if parent.is_symlink():
+                print(f"error: report path has symlink parent: {parent}", file=sys.stderr)
+                return 2
+        if report_path.exists() and report_path.is_symlink():
+            print("error: refusing symlink report path", file=sys.stderr)
+            return 2
+        args.report_path = str(report_path)
         write_markdown_report(args.report_path, summary)
 
     if args.mode == "apply" and summary["files_with_proposals"] > 0:
-        import subprocess
-        print("Refreshing kb-index cache…", file=sys.stderr)
-        subprocess.run(["kb-index", "--update"], check=False)
+        indexer = shutil.which("kb-index")
+        if indexer:
+            print("Refreshing kb-index cache…", file=sys.stderr)
+            subprocess.run([indexer, "--update", "--kb-root", str(kb_root)], check=False)
+        else:
+            print("note: kb-index unavailable; refresh the configured index before indexed queries",
+                  file=sys.stderr)
 
     return 0
 

@@ -1,0 +1,18 @@
+{
+  "author": "kb-bot",
+  "version": 1,
+  "release": "2.1.0",
+  "files": {
+    "AGENTS.md": "c2c96c6c4fe8daf628a5bb406ca17e6a10cc7251cb01d8ef1414c82aaebdb42e",
+    "_rules.md": "c865230af6fc00e8ca933d1dc22854688f91d878a93e426b68ab90fd53e237b6",
+    "_schema.md": "9f0df11723f083a3102b66e0d098841cbe0c46d9b07e8fd0e83bbcd0c4763731",
+    "_workflows/ingest.md": "6e60e6ad1f1c3801ecacd5e13715b8c31769d1144bc392fded8b0a6e43529533",
+    "_workflows/synthesise.md": "acb1dc6e834fdecc02c3dad7d4b7dd16085a01031f5e686760c22a8818d39e76",
+    "_workflows/project.md": "d9a0f3e2e0939837b531bd95c27ef9f1b1f9d2cfde785474cf8a9871f71039d6",
+    "_workflows/maintenance.md": "4022f2a26b21166cf4f29f678481ab49d9390c92700791a0ead995a0a73761cb",
+    "_workflows/media.md": "f79b396f25757d5c1ecb98cfe4f99bf289a1e87cca3adba76ffde664385242b8",
+    "_workflows/library.md": "52252c868de13cd73a409798a9bbcae2c170bb42d5c08021f643a31a61cd7f8f",
+    "_tools/README.md": "5cbc66fba6e7d5d1f26fbdeb24ce6db69a4e2ae3119fc1f3bd5b034690394bd6",
+    "_schema-media.md": "b828734902070925eb727d2de85525861b7cd275e6d80f5198da4f204b5d3ac8"
+  }
+}

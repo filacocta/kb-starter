@@ -27,34 +27,47 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import re
+import stat
 import sys
 from pathlib import Path
+from typing import Any
 
 import yaml
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from kb_config import (  # noqa: E402
+    KBConfigError,
+    iter_markdown,
+    read_regular_text,
+    resolve_kb_root,
+)
+
+
+def _load_write_guard() -> Any:
+    """Load the bundled shared guard without requiring a package install."""
+    key = "kb_tag_write_guard"
+    module = sys.modules.get(key)
+    if module is not None:
+        return module
+    guard_path = SCRIPT_DIR.parent / "knowledgebase" / "_tools" / "kb-write-guard.py"
+    spec = importlib.util.spec_from_file_location(key, guard_path)
+    if spec is None or spec.loader is None:
+        raise ImportError("cannot load bundled kb-write-guard.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[key] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_write_guard = _load_write_guard()
+
 # ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-
-
-def resolve_kb_root() -> Path:
-    """KB_ROOT env wins; else ~/.claude/kb-config.md; else default vault path."""
-    env_val = os.environ.get("KB_ROOT")
-    if env_val:
-        return Path(os.path.expanduser(env_val)).resolve()
-    kb_config = Path.home() / ".claude/kb-config.md"
-    if kb_config.exists():
-        for line in kb_config.read_text().splitlines():
-            line = line.strip()
-            if line.startswith("KB_ROOT:") or line.startswith("KB_ROOT="):
-                val = line.split(":", 1)[-1] if ":" in line else line.split("=", 1)[-1]
-                val = val.strip().strip('"').strip("'")
-                if val:
-                    return Path(os.path.expanduser(val)).resolve()
-    return (Path.home() / "Documents/vault/knowledgebase").resolve()
-
 # Notes we never touch.
 SKIP_FILENAMES = {
     "_index.md", "_checkpoint.md", "_schema.md", "_rules.md",
@@ -103,7 +116,22 @@ ENTITY_TYPE_TAG_MAP: dict[str, str] = {
 FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
 
-_SIMPLE_FIELD_RE = re.compile(r"^([\w-]+):\s*(.+)$", re.MULTILINE)
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """Reject duplicate YAML keys instead of silently choosing one value."""
+
+    def construct_mapping(self, node, deep=False):  # type: ignore[override]
+        mapping = {}
+        for key_node, value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if key in mapping:
+                raise yaml.constructor.ConstructorError(
+                    "while constructing a mapping",
+                    node.start_mark,
+                    f"found duplicate key {key!r}",
+                    key_node.start_mark,
+                )
+            mapping[key] = self.construct_object(value_node, deep=deep)
+        return mapping
 
 
 def split_frontmatter(text: str) -> tuple[dict, str, int]:
@@ -112,16 +140,13 @@ def split_frontmatter(text: str) -> tuple[dict, str, int]:
         return ({}, text, 0)
     raw = m.group(1)
     try:
-        fm = yaml.safe_load(raw) or {}
+        fm = yaml.load(raw, Loader=_UniqueKeyLoader) or {}
         if not isinstance(fm, dict):
             fm = {}
     except yaml.YAMLError:
-        # Fall back to regex extraction for the simple scalar fields we need.
+        # A malformed or duplicate frontmatter block is ambiguous ownership
+        # metadata.  Do not recover with a permissive regex before a write.
         fm = {}
-        for km in _SIMPLE_FIELD_RE.finditer(raw):
-            key, val = km.group(1), km.group(2).strip().strip('"').strip("'")
-            if key in ("type", "topic", "entity-type", "tags", "status", "title"):
-                fm[key] = val
     return (fm, text[m.end():], m.end())
 
 
@@ -228,31 +253,30 @@ def verify_yaml(text: str) -> bool:
     if not m:
         return True
     try:
-        result = yaml.safe_load(m.group(1))
+        result = yaml.load(m.group(1), Loader=_UniqueKeyLoader)
         return isinstance(result, dict)
     except yaml.YAMLError:
         return False
 
 
-def safe_write(path: Path, content: str, original_mtime_ns: int) -> bool:
-    try:
-        if path.stat().st_mtime_ns != original_mtime_ns:
-            print(f"warn: concurrent modification, skipping {path}", file=sys.stderr)
-            return False
-    except OSError:
-        return False
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    try:
-        tmp.write_text(content)
-        os.replace(tmp, path)
-        return True
-    except OSError as e:
-        print(f"warn: write failed for {path}: {e}", file=sys.stderr)
-        try:
-            tmp.unlink()
-        except OSError:
-            pass
-        return False
+def _file_identity(path: Path) -> tuple[int, int, int, int]:
+    """Return an lstat identity suitable for the plan/recheck boundary."""
+    info = os.lstat(path)
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        raise KBConfigError(f"note is not a singly-linked regular file: {path}")
+    return (info.st_dev, info.st_ino, info.st_mtime_ns, info.st_size)
+
+
+def _ownership_reason(path: Path, fm: dict, kb_root: Path | None = None) -> str | None:
+    """Return a refusal reason for immutable sources or human-owned notes."""
+    relative_parts = path.relative_to(kb_root).parts if kb_root is not None else path.parts
+    if "sources" in relative_parts:
+        return "immutable source path"
+    if str(fm.get("type", "")).strip().lower() == "source":
+        return "immutable source note"
+    if fm.get("author") != "kb-bot":
+        return "note is not unambiguously owned by kb-bot"
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -261,18 +285,12 @@ def safe_write(path: Path, content: str, original_mtime_ns: int) -> bool:
 
 
 def collect_files(kb_root: Path, scope: str) -> list[Path]:
-    dirs: list[Path] = []
+    dirs: list[str] = []
     if scope in ("all", "topics"):
-        dirs.append(kb_root / "topics")
+        dirs.append("topics")
     if scope in ("all", "projects"):
-        dirs.append(kb_root / "projects")
-    out: list[Path] = []
-    for d in dirs:
-        if not d.is_dir():
-            continue
-        for p in d.rglob("*.md"):
-            if not is_skipped(p, kb_root):
-                out.append(p)
+        dirs.append("projects")
+    out = [p for p in iter_markdown(kb_root, dirs) if not is_skipped(p, kb_root)]
     return sorted(out)
 
 
@@ -287,31 +305,58 @@ def main() -> int:
     parser.add_argument("--verbose", action="store_true",
                         help="Show per-file tag assignments in dry-run")
     parser.add_argument("--kb-root", default=None,
-                        help="KB vault root (default: KB_ROOT env or ~/.claude/kb-config.md)")
+                        help="Explicit KB vault root (otherwise use portable config resolution)")
     args = parser.parse_args()
 
-    kb_root = Path(args.kb_root) if args.kb_root else resolve_kb_root()
-    if not kb_root.is_dir():
-        print(f"error: KB not found at {kb_root}", file=sys.stderr)
+    try:
+        kb_root = resolve_kb_root(args.kb_root)
+    except KBConfigError as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    files = collect_files(kb_root, args.scope)
+    try:
+        files = collect_files(kb_root, args.scope)
+    except (KBConfigError, OSError) as exc:
+        print(f"error: cannot scan KB: {exc}", file=sys.stderr)
+        return 2
     print(f"Scanning {len(files)} files (scope={args.scope}, mode={'apply' if args.apply else 'dry-run'})…",
           file=sys.stderr)
 
-    needs_tags: list[tuple[Path, list[str]]] = []
+    # Keep the first read and its identity as a plan.  Apply mode re-reads
+    # every candidate while holding the shared KB lock before publishing it.
+    needs_tags: list[tuple[Path, list[str], tuple[int, int, int, int]]] = []
     skipped_already_tagged = 0
+    skipped_unowned = 0
+    skipped_sources = 0
 
     for path in files:
         try:
-            mtime_ns = path.stat().st_mtime_ns
-            text = path.read_text(encoding="utf-8")
-        except OSError:
+            text = read_regular_text(path)
+            identity = _file_identity(path)
+        except (KBConfigError, OSError):
             continue
 
         fm, _body, body_start = split_frontmatter(text)
         if body_start == 0:
             continue  # no frontmatter at all
+
+        ownership = _ownership_reason(path, fm, kb_root)
+        if ownership:
+            if ownership.startswith("immutable source"):
+                skipped_sources += 1
+            else:
+                skipped_unowned += 1
+            if args.verbose:
+                print(f"  skip {path.relative_to(kb_root)} — {ownership}")
+            continue
+
+        # A non-list/non-string tags value is malformed ownership-adjacent
+        # metadata; do not normalize it as a side effect of tag enrichment.
+        raw_tags = fm.get("tags")
+        if raw_tags is not None and not isinstance(raw_tags, (list, str)):
+            if args.verbose:
+                print(f"  skip {path.relative_to(kb_root)} — malformed tags field")
+            continue
 
         existing = extract_existing_tags(fm)
         if existing:
@@ -322,37 +367,83 @@ def main() -> int:
         if not derived:
             continue
 
-        needs_tags.append((path, derived))
-        rel = str(path.relative_to(kb_root))
-
-        if args.apply:
-            candidate = apply_tags(text, body_start, derived)
-            if not verify_yaml(candidate):
-                print(f"warn: YAML would break in {rel}; skipped", file=sys.stderr)
-                continue
-            safe_write(path, candidate, mtime_ns)
-        elif args.verbose:
-            print(f"  {rel}")
+        needs_tags.append((path, derived, identity))
+        if args.verbose and not args.apply:
+            print(f"  {path.relative_to(kb_root)}")
             print(f"    + {derived}")
+
+    written = 0
+    if args.apply and needs_tags:
+        try:
+            with _write_guard.write_lock(kb_root, nonblocking=True):
+                for path, derived, planned_identity in needs_tags:
+                    rel = str(path.relative_to(kb_root))
+                    try:
+                        current_identity = _file_identity(path)
+                        if current_identity != planned_identity:
+                            print(f"warn: concurrent modification, skipping {rel}", file=sys.stderr)
+                            continue
+                        # Re-read under the lock.  This protects ownership and
+                        # source checks even if a cooperative writer changed
+                        # metadata after the initial dry-run-style scan.
+                        current_text = _write_guard.regular_text(path)
+                        read_identity = _file_identity(path)
+                        if read_identity != current_identity:
+                            print(f"warn: note changed during re-read, skipping {rel}", file=sys.stderr)
+                            continue
+                        current_fm, _body, current_body_start = split_frontmatter(current_text)
+                        if current_body_start == 0:
+                            print(f"warn: frontmatter changed, skipping {rel}", file=sys.stderr)
+                            continue
+                        ownership = _ownership_reason(path, current_fm, kb_root)
+                        if ownership:
+                            print(f"warn: {ownership}, skipping {rel}", file=sys.stderr)
+                            continue
+                        current_raw_tags = current_fm.get("tags")
+                        if current_raw_tags is not None and not isinstance(current_raw_tags, (list, str)):
+                            print(f"warn: malformed tags field, skipping {rel}", file=sys.stderr)
+                            continue
+                        if extract_existing_tags(current_fm):
+                            print(f"note: tags appeared while planning, skipping {rel}", file=sys.stderr)
+                            continue
+                        candidate = apply_tags(current_text, current_body_start, derived)
+                        if not verify_yaml(candidate):
+                            print(f"warn: YAML would break in {rel}; skipped", file=sys.stderr)
+                            continue
+                        _write_guard.atomic_write(
+                            path, candidate, prefix=".kb-tag-"
+                        )
+                        written += 1
+                    except (_write_guard.WriteGuardError, KBConfigError, OSError) as exc:
+                        print(f"warn: safe write skipped {rel}: {exc}", file=sys.stderr)
+        except (_write_guard.WriteGuardError, KBConfigError, OSError) as exc:
+            print(f"error: could not acquire KB write guard: {exc}", file=sys.stderr)
+            return 2
 
     # Summary
     print(f"\nResults:")
     print(f"  Files scanned:          {len(files)}")
     print(f"  Already tagged (skip):  {skipped_already_tagged}")
+    print(f"  Immutable sources (skip): {skipped_sources}")
+    print(f"  Unowned/ambiguous (skip): {skipped_unowned}")
     print(f"  Need structural tags:   {len(needs_tags)}")
     if args.apply:
-        print(f"  Tags written:           {len(needs_tags)}")
-        if needs_tags:
+        print(f"  Tags written:           {written}")
+        if written:
             # Refresh the frontmatter cache so kb-search stays current
             import subprocess
             print("Refreshing kb-index cache…", file=sys.stderr)
-            subprocess.run(["kb-index", "--update"], check=False)
+            index_script = Path(__file__).resolve().with_name("kb-index")
+            subprocess.run(
+                [sys.executable, str(index_script), "--update", "--kb-root", str(kb_root)],
+                check=False,
+            )
     else:
         print(f"  (dry-run — pass --apply to write)")
 
     if not args.verbose and not args.apply and needs_tags:
         print(f"\nTop 20 files that would be tagged:")
-        for path, tags in needs_tags[:20]:
+        for path, tags, _identity in needs_tags[:20]:
             rel = str(path.relative_to(kb_root))
             print(f"  {rel}")
             print(f"    + {tags}")

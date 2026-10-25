@@ -1,4 +1,4 @@
-You are a content tagging agent for a personal knowledge base.
+You are a content tagging agent for a configured knowledge base.
 
 ## Task
 
@@ -76,7 +76,11 @@ Structural tags (type, topic, entity-type) are already in the frontmatter. Your 
 
 ## Configuration
 
-Read `~/.claude/kb-config.md` to get `KB_ROOT`.
+Resolve `KB_ROOT` from the runtime's environment/config contract. Prefer a
+non-empty `KB_ROOT` environment variable, then the explicit `KB_CONFIG` path,
+then the installed agent config; preserve the legacy Claude config as a
+backward-compatible fallback. If an explicit root/config is missing or invalid,
+stop without falling through or printing config contents.
 
 ## Important
 

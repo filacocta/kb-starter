@@ -5,7 +5,7 @@
 #     "playwright>=1.44,<2",
 # ]
 # ///
-"""Headless-Chromium media discovery and element-screenshot capture for Brendan's KB.
+"""Headless-Chromium media discovery and element-screenshot capture for a KB.
 
 Sibling tool to kb-media-capture.py. The static-HTML scraper handles 95% of cases
 fast (~200ms); this tool is the post-JS fallback for pages where the static fetch
@@ -31,7 +31,7 @@ This tool runs in foreground from a uv-managed environment via PEP 723 inline
 script metadata. The first invocation downloads the playwright Python package
 (small); the Chromium binary is shared at ~/.cache/ms-playwright/ from any
 previous install. The user MUST have run `playwright install chromium` at least
-once (stonkbot bootstraps this; see Vault/projects/stonkbot README).
+once before using this optional fallback.
 """
 from __future__ import annotations
 

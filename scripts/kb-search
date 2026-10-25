@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""kb-search — query the KB frontmatter cache without reading note files.
+"""kb-search: bounded current Markdown retrieval or legacy metadata search.
+
+Live modes require --domain and an explicit domain mapping. Use --body for
+section search, --context with --topic or --project, --headings PATH, or
+--read PATH with --lines START:END or --heading TITLE. Add --sources to inspect
+source evidence. --budget-bytes bounds the entire UTF-8 response. Exit 3 means
+useful but incomplete retrieval. Live modes need no Obsidian app or body index.
 
 Reads `_kb-index.json` and returns matching notes as a compact markdown
 table (path + title + tags + description snippet), or JSON.
@@ -26,31 +32,20 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
+sys.dont_write_bytecode = True
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# KB root resolution
-# ---------------------------------------------------------------------------
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
 
-
-def resolve_kb_root() -> Path:
-    env_val = os.environ.get("KB_ROOT")
-    if env_val:
-        return Path(os.path.expanduser(env_val)).resolve()
-    kb_config = Path.home() / ".claude/kb-config.md"
-    if kb_config.exists():
-        for line in kb_config.read_text().splitlines():
-            line = line.strip()
-            if line.startswith("KB_ROOT:") or line.startswith("KB_ROOT="):
-                val = line.split(":", 1)[-1] if ":" in line else line.split("=", 1)[-1]
-                val = val.strip().strip('"').strip("'")
-                if val:
-                    return Path(os.path.expanduser(val)).resolve()
-    return (Path.home() / "Documents/vault/knowledgebase").resolve()
-
+from kb_config import (  # noqa: E402
+    KBConfigError,
+    read_regular_text,
+    resolve_kb_root,
+)
 
 # ---------------------------------------------------------------------------
 # Scoring
@@ -146,14 +141,18 @@ def format_compact(results: list[tuple[float, dict]]) -> str:
 
 def peek_file(kb_root: Path, rel_path: str) -> str:
     """Return frontmatter + first paragraph of one file."""
-    path = kb_root / rel_path
-    if not path.is_file():
-        # Try treating as a search term / file name
+    requested = Path(rel_path).expanduser()
+    if requested.is_absolute() or ".." in requested.parts:
+        return f"File not found: {rel_path}"
+    path = kb_root / requested
+    try:
+        path.relative_to(kb_root)
+    except ValueError:
         return f"File not found: {rel_path}"
     try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as e:
-        return f"Error reading {rel_path}: {e}"
+        text = read_regular_text(path)
+    except (KBConfigError, OSError):
+        return f"File not found: {rel_path}"
 
     m = FRONTMATTER_RE.match(text)
     if not m:
@@ -186,19 +185,49 @@ def main() -> int:
     parser.add_argument("--topic", help="Filter by topic slug")
     parser.add_argument("--type", dest="type_", help="Filter by note type (concept|entity|synthesis|note|…)")
     parser.add_argument("--stub", action="store_true", help="Only show stub notes")
-    parser.add_argument("--limit", "-n", type=int, default=15, help="Max results (default: 15)")
+    parser.add_argument("--limit", "-n", type=int, help="Max results (live default: 5, metadata: 15)")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--compact", action="store_true", help="Compact LLM-friendly text output (default)")
     parser.add_argument("--table", action="store_true", help="Markdown table output")
     parser.add_argument("--peek", metavar="PATH", help="Show frontmatter + first paragraph of a file")
     parser.add_argument("--stats", action="store_true", help="Show index statistics instead of searching")
     parser.add_argument("--kb-root", default=None)
+    parser.add_argument("--config", default=None)
+    parser.add_argument("--domain", choices=("personal", "work"))
+    live = parser.add_mutually_exclusive_group()
+    live.add_argument("--body", action="store_true")
+    live.add_argument("--context", action="store_true")
+    live.add_argument("--read", metavar="PATH")
+    live.add_argument("--headings", metavar="PATH")
+    parser.add_argument("--project")
+    parser.add_argument("--area", choices=("topics", "projects"), help="Search one area without knowing its slug")
+    parser.add_argument("--sources", action="store_true")
+    parser.add_argument("--include-excluded", action="store_true")
+    parser.add_argument("--lines", metavar="START:END")
+    parser.add_argument("--heading")
+    parser.add_argument("--expect-sha256")
+    parser.add_argument("--budget-bytes", type=int, default=12000)
     args = parser.parse_args()
 
-    kb_root = Path(args.kb_root) if args.kb_root else resolve_kb_root()
-    if not kb_root.is_dir():
-        print(f"error: KB not found at {kb_root}", file=sys.stderr)
+    try:
+        kb_root = resolve_kb_root(args.kb_root, config=args.config, domain=args.domain)
+    except KBConfigError as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 2
+
+    if args.body or args.context or args.read is not None or args.headings is not None:
+        args.limit = 5 if args.limit is None else args.limit
+        if args.type_ or args.tag or args.stub or args.stats or args.peek or args.table:
+            parser.error("metadata filters do not apply to live modes; use --area, --topic or --project")
+        if not args.domain:
+            print("error: live retrieval requires --domain personal or work", file=sys.stderr)
+            return 2
+        from kb_retrieval import run
+        return run(kb_root, args)
+
+    args.limit = 15 if args.limit is None else args.limit
+    if args.area or args.project or args.sources or args.include_excluded or args.lines or args.heading or args.expect_sha256:
+        parser.error("live retrieval options require --body, --context, --read or --headings")
 
     if args.peek:
         print(peek_file(kb_root, args.peek))
@@ -206,15 +235,12 @@ def main() -> int:
 
     index_path = kb_root / "_kb-index.json"
     if not index_path.exists():
-        print("Index not found — building now...", file=sys.stderr)
-        import subprocess
-        subprocess.run([sys.executable, __file__.replace("kb-search", "kb-index")], check=False)
-        if not index_path.exists():
-            kb_index_bin = Path(sys.executable).parent / "kb-index"
-            subprocess.run(["kb-index"], check=False)
-        if not index_path.exists():
-            print(f"error: could not build index at {index_path}", file=sys.stderr)
-            return 2
+        print(
+            f"error: index not found at {index_path}; run kb-index explicitly "
+            "to build it before this read-only search",
+            file=sys.stderr,
+        )
+        return 2
 
     # Warn if index is stale (>24h old)
     import time
@@ -224,13 +250,26 @@ def main() -> int:
               file=sys.stderr)
 
     try:
-        data = json.loads(index_path.read_text())
-    except (json.JSONDecodeError, OSError) as e:
+        data = json.loads(read_regular_text(index_path))
+    except (KBConfigError, json.JSONDecodeError, OSError) as e:
         print(f"error: cannot read index: {e}", file=sys.stderr)
         return 2
 
-    records: list[dict] = data.get("records", [])
-    built = data.get("built", "unknown")
+    if isinstance(data, dict):
+        if data.get("kb_root") != str(kb_root):
+            print("error: metadata index root belongs to a different or unbound KB; rebuild it explicitly", file=sys.stderr)
+            return 2
+        records: list[dict] = data.get("records", [])
+        built = data.get("built", "unknown")
+    elif isinstance(data, list):
+        print("error: legacy index has no root binding; rebuild it explicitly", file=sys.stderr)
+        return 2
+    else:
+        print("error: index must contain a records list", file=sys.stderr)
+        return 2
+    if not isinstance(records, list) or not all(isinstance(record, dict) for record in records):
+        print("error: index records are malformed", file=sys.stderr)
+        return 2
 
     if args.stats:
         by_type: dict[str, int] = {}
@@ -267,7 +306,7 @@ def main() -> int:
     elif args.table:
         print(format_markdown(results))
     else:
-        # Compact is default — most useful for Claude context
+        # Compact is default — useful for an agent context window
         print(f"Found {len(results)} result(s) (index built {built}):\n")
         print(format_compact(results))
 

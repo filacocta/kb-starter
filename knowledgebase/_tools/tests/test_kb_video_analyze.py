@@ -6,6 +6,7 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
 from PIL import Image, ImageDraw
 
 
@@ -56,7 +57,113 @@ def test_argparse_wiring() -> None:
     assert args.summary is True
     assert args.whisper_model == "small"
     assert args.device == "cpu"
+    assert args.ocr_engine is None
     assert args.max_frames == 12
+
+
+@pytest.mark.parametrize("flag", ["--vision", "--summary"])
+def test_retired_cli_flags_fail_before_reexec_or_io(monkeypatch, tmp_path, capsys, flag) -> None:
+    video = load_video_module()
+    calls = []
+
+    monkeypatch.setattr(video, "maybe_reexec_tools_venv", lambda: calls.append("reexec"))
+    monkeypatch.setattr(video, "yt_dlp_extract", lambda *args, **kwargs: calls.append("download"))
+
+    workdir = tmp_path / "work"
+    out = tmp_path / "analysis.md"
+    with pytest.raises(SystemExit) as exc_info:
+        video.main(
+            [
+                "https://example.com/video",
+                flag,
+                "--workdir",
+                str(workdir),
+                "--out",
+                str(out),
+            ]
+        )
+
+    assert exc_info.value.code == 2
+    assert calls == []
+    assert not workdir.exists()
+    assert not out.exists()
+    error = capsys.readouterr().err
+    assert "extract transcript/frames" in error
+    assert "active native KB worker" in error
+    assert "no CLI simulation" in error
+
+
+@pytest.mark.parametrize("flag", ["--vision", "--summary"])
+def test_analyze_rejects_retired_flags_before_workdir_or_download(monkeypatch, tmp_path, flag) -> None:
+    video = load_video_module()
+    calls = []
+    monkeypatch.setattr(video, "yt_dlp_extract", lambda *args, **kwargs: calls.append("download"))
+
+    workdir = tmp_path / "work"
+    out = tmp_path / "analysis.md"
+    args = video.build_parser().parse_args(
+        ["https://example.com/video", flag, "--workdir", str(workdir), "--out", str(out)]
+    )
+
+    with pytest.raises(video.RetiredInterpretationRouteError) as exc_info:
+        video.analyze(args)
+
+    assert "extract transcript/frames" in str(exc_info.value)
+    assert "active native KB worker" in str(exc_info.value)
+    assert calls == []
+    assert not workdir.exists()
+    assert not out.exists()
+
+
+def test_direct_interpretation_helpers_fail_closed() -> None:
+    video = load_video_module()
+    for call in (
+        lambda: video.describe_figures([{"path": "/tmp/frame.jpg"}]),
+        lambda: video.summarize_transcript([{"start": 0.0, "text": "transcript"}]),
+    ):
+        with pytest.raises(video.RetiredInterpretationRouteError) as exc_info:
+            call()
+        message = str(exc_info.value)
+        assert "extract transcript/frames" in message
+        assert "active native KB worker" in message
+        assert "no CLI simulation" in message
+
+
+def test_evidence_quality_values_are_frozen() -> None:
+    video = load_video_module()
+    expected = {
+        "transcript-plus-visual",
+        "transcript-only",
+        "visual-only",
+        "summary-only",
+        "insufficient",
+    }
+
+    assert video.EVIDENCE_QUALITY_VALUES == expected
+    cases = [
+        ([{"text": "hello"}], [{"ocr_text": "slide"}], [], ""),
+        ([{"text": "hello"}], [], [], ""),
+        ([], [{"ocr_text": "slide"}], [], ""),
+        ([], [], [{"path": "figure.png"}], ""),
+        ([], [], [], "short summary"),
+        ([], [], [], ""),
+    ]
+
+    for transcript, frames, figures, summary in cases:
+        assert video.evidence_quality(transcript, frames, figures, summary) in video.EVIDENCE_QUALITY_VALUES
+
+
+def test_suggest_frame_timestamps_uses_visual_and_focus_terms() -> None:
+    video = load_video_module()
+    transcript = [
+        {"start": 5.0, "end": 6.0, "text": "intro and housekeeping"},
+        {"start": 40.0, "end": 42.0, "text": "now look at this dashboard chart"},
+        {"start": 90.0, "end": 92.0, "text": "the shannon signal appears here"},
+    ]
+
+    timestamps = video.suggest_frame_timestamps(transcript, 5, ["shannon"])
+
+    assert timestamps == [38.0, 40.0, 42.0, 88.0, 90.0]
 
 
 def test_imagehash_dedup_synthetic_frames() -> None:
@@ -77,9 +184,8 @@ def test_imagehash_dedup_synthetic_frames() -> None:
     assert video.is_distinct_hash(distinct, seen) is True
 
 
-def test_mocked_captions_path(monkeypatch, tmp_path, capsys) -> None:
+def test_mocked_captions_helper_remains_testable(monkeypatch) -> None:
     video = load_video_module()
-    extract_calls = []
 
     class FakeApi:
         def fetch(self, video_id):
@@ -89,35 +195,26 @@ def test_mocked_captions_path(monkeypatch, tmp_path, capsys) -> None:
     fake_module = types.SimpleNamespace(YouTubeTranscriptApi=FakeApi)
     monkeypatch.setitem(sys.modules, "youtube_transcript_api", fake_module)
 
-    def fake_extract(url, workdir, need_audio, need_video):
-        extract_calls.append((need_audio, need_video))
-        return video.DownloadedMedia(
-            metadata={
-                "title": "Demo",
-                "uploader": "Tester",
-                "url": url,
-                "duration": 10,
-                "id": "abc123DEF45",
-                "extractor": "Youtube",
-            },
-            audio_path=None,
-            video_path=None,
-        )
-
-    monkeypatch.setattr(video, "yt_dlp_extract", fake_extract)
-    monkeypatch.setattr(video, "download_with_yt_dlp", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("audio download should not run")))
-    monkeypatch.setattr(video, "transcribe_with_whisper", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("ASR should not run")))
-
-    out = tmp_path / "analysis.md"
-    code = video.main(["https://www.youtube.com/watch?v=abc123DEF45", "--transcript-only", "--out", str(out), "--json"])
-    payload = json.loads(capsys.readouterr().out)
-
-    assert code == 0
-    assert payload["metadata"]["title"] == "Demo"
-    assert payload["transcript"] == [
+    result = video.fetch_youtube_captions("https://www.youtube.com/watch?v=abc123DEF45", {})
+    assert result == [
         {"start": 1.5, "end": 3.5, "text": "Hello world", "source": "youtube-captions"}
     ]
-    assert extract_calls == [(False, False)]
-    assert payload["frames"] == []
-    assert out.exists()
-    assert "Hello world" in out.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("flags", [[], ["--transcript-only"], ["--no-ocr"], ["--json"]])
+def test_url_entrypoint_retired_before_any_io(monkeypatch, tmp_path, capsys, flags) -> None:
+    video = load_video_module()
+    for name in ("maybe_reexec_tools_venv", "yt_dlp_extract", "get_transcript_with_fallback"):
+        monkeypatch.setattr(video, name, lambda *a, **kw: pytest.fail("retirement must precede I/O"))
+    out = tmp_path / "analysis.md"
+    work = tmp_path / "work"
+    argv = ["https://example.com/video", "--out", str(out), "--workdir", str(work), *flags]
+    with pytest.raises(SystemExit) as exc:
+        video.main(argv)
+    assert exc.value.code == 2
+    assert "kb-media-inspect.py" in capsys.readouterr().err
+    assert not out.exists() and not work.exists()
+
+    with pytest.raises(video.RetiredVideoRouteError, match="unbounded URL/video analyzer is retired"):
+        video.analyze(video.build_parser().parse_args(argv))
+    assert not out.exists() and not work.exists()

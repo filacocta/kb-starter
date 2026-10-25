@@ -1,188 +1,135 @@
 # kb-starter
 
-A self-contained starter kit for a personal knowledge base built on [Obsidian](https://obsidian.md) and operated by LLMs or local tooling. Clone this repo to get the Obsidian plugin, KB skills, reusable workflow tools, optional Telegram capture bot, optional local workflow dashboard, and a blank-but-seeded knowledgebase ready to use.
+A Markdown knowledge base for agents and people. Maintain source-backed research
+articles or a team engineering wiki, retrieve bounded context, and keep decisions
+and project history useful. The file-based core needs Python and an agent that
+can read local files. It needs no running app, bot, model server or vector database.
 
-The system is **LLM-agnostic**: all conventions are plain English and any capable LLM can operate the KB by reading `knowledgebase/_schema.md`. The included skills are written for agent-CLI workflows, but the KB itself can be queried by any model.
+This contribution builds on [sbuffkin/kb-starter](https://github.com/sbuffkin/kb-starter).
+The optional Obsidian plugin remains a separate Anthropic adapter. The bundled
+capture service and workflow dashboard are removed from this core branch.
 
----
+## Choose a KB
 
-## What's included
+For a personal research KB, copy the seeded `knowledgebase/` to your destination.
+It separates retained sources, maintained articles and project continuity.
+[Its entry point](knowledgebase/AGENTS.md) routes lookup and selected write flows.
 
-| Folder | Contents |
-|---|---|
-| `plugin/` | `kb-bot` — Obsidian plugin source. Adds an in-vault ask command backed by a configured LLM API. |
-| `skills/` | KB skills that operate the KB from an agent CLI. |
-| `knowledgebase/` | Blank starter KB with schema, rules, shared `_tools/`, ideas backlog, and the `obsidian` topic pre-seeded. Copy this into your Obsidian vault. |
-| `projects/kb-feed/` | Optional Telegram capture bot that routes mobile-shared URLs and notes into KB queues. |
-| `projects/kb-workflow-dashboard/` | Optional read-only local web dashboard for KB workflow status. |
+For an engineering wiki, copy `profiles/team/AGENTS.md`, `profiles/team/SCHEMA.md`
+and `profiles/team/knowledgebase/` into a new repository. The team profile has no
+Personal authorship guard, feed, intake queue or source-publication requirement.
+Use it as guidance for a new wiki; do not overwrite an existing team's contract.
 
----
+## Install and query
 
-## Prerequisites
+Use Python 3.12 or newer. From this checkout:
 
-- [Obsidian](https://obsidian.md) (any recent version)
-- An agent CLI capable of reading local files and running shell commands
-- Node.js 18+ and npm (for building the plugin)
-- `pdftotext` for PDF ingestion:
-  ```bash
-  sudo apt-get install poppler-utils   # WSL2 / Debian/Ubuntu
-  brew install poppler                  # macOS
-  ```
-
----
-
-## Quick start
-
-### 1. Build and install the plugin
-
-```bash
-cd plugin
-npm install
-npm run build          # produces main.js
-```
-
-Copy the plugin into your Obsidian vault:
-
-```bash
-mkdir -p /path/to/your/vault/.obsidian/plugins/kb-bot
-cp main.js manifest.json /path/to/your/vault/.obsidian/plugins/kb-bot/
-```
-
-In Obsidian: **Settings → Community Plugins → KB Bot → Enable**. Then add your Anthropic API key in the plugin settings.
-
-> **Vault folder name:** The plugin's authorship guard expects the KB to live at `knowledgebase/` relative to your vault root. This name is hardcoded in `plugin/src/guard.ts`. If you want a different folder name, edit `KB_ROOT` in that file before building.
-
-### 2. Install the skills
-
-```bash
-bash skills/install.sh
-```
-
-This copies the included KB skills to `~/.claude/skills/` and creates `~/.claude/kb-config.md` with placeholder values.
-
-### 3. Configure your KB path
-
-Edit `~/.claude/kb-config.md`:
-
-```
-KB_ROOT: /path/to/your/vault/knowledgebase
-VAULT_NAME: your-vault-name
-```
-
-- `KB_ROOT` — absolute path to the `knowledgebase/` folder inside your Obsidian vault
-- `VAULT_NAME` — the name of your Obsidian vault (used in `obsidian://` deep links)
-
-All KB skills read this file at startup. You only need to set it once.
-
-### 4. Copy the starter KB
-
-```bash
-cp -r knowledgebase/ /path/to/your/vault/knowledgebase
-```
-
-The `knowledgebase/` folder includes:
-- `_schema.md` — the full structural specification any agent reads to orient itself
-- `_rules.md` — behavioural rules (authorship guard, navigation protocol, citation standards, etc.)
-- `_index.md` — navigation index (starts with just the `obsidian` topic)
-- Blank stubs for `_log.md`, `_checkpoint.md`, `_dive-queue.md`, `_todo.md`
-- `_tools/` — shared scripts for linting, dedup, queue checkoff, derived dive-queue regeneration, media capture, tweet/video extraction, and prep checks
-- `ideas/_backlog.md` — durable parking lot for broad ideas that are not yet topics or projects
-- `readinglist/Links.md` — global URL inbox
-- `topics/obsidian/` — pre-seeded topic documenting the Obsidian ecosystem (useful reference for any KB operating in Obsidian)
-- `projects/kb-feed/` and `projects/kb-workflow-dashboard/` — KB-native project records for the optional workflow tools in this repo
-
-### 5. Verify
-
-In an agent CLI session, run:
-
-```
-/kb-ask
-```
-
-The skill should load, read your config, and show the opening menu.
-
----
-
-## Skills reference
-
-| Skill | What it does |
-|---|---|
-| `/kb-ask [question]` | Start a scoped KB session. Browse topics, query content, or ask a natural language question. Generates `obsidian://` citations. |
-| `/kb-ingest <url\|path>` | Ingest a single source interactively. Fetches, discusses, assigns topic, writes source note. Full checkpoint support. |
-| `/kb-queue [topic]` | Batch process a topic's reading list. Per-item approval checklist with pause/resume for overnight runs. |
-| `/kb-synthesise [topic]` | Generate concept/entity/synthesis notes from accumulated sources. Presents an approval plan before writing. |
-| `/kb-lint [topic]` | Health check: broken wikilinks, orphan pages, missing stubs, incomplete frontmatter, contradictions, stale sources. |
-| `/kb-auto [topic]` | Headless autonomous ingestion from topic reading-list `## Auto-approved` sections. `_dive-queue.md` is generated/read-only. |
-
----
-
-## Optional workflow tools
-
-### kb-feed
-
-`projects/kb-feed/` is a Python Telegram capture bot. It does not ingest sources. It validates messages, maps Telegram topic threads to KB topic slugs, writes queue entries, and keeps runtime state in SQLite outside the repo.
-
-```bash
-cd projects/kb-feed
+```sh
 python3 -m venv .venv
-.venv/bin/pip install -e '.[dev]'
-mkdir -p ~/.config/kb-feed ~/.local/state/kb-feed
-cp credentials.env.example ~/.config/kb-feed/credentials.env
-cp config.example.toml ~/.config/kb-feed/kb-feed.toml
+.venv/bin/python -m pip install -r knowledgebase/_tools/requirements.txt
+.venv/bin/python skills/install.py --agent codex \
+  --personal-root /absolute/personal/knowledgebase
+.venv/bin/python skills/install.py --agent codex --status
 ```
 
-Read `projects/kb-feed/README.md` before enabling live writes.
+Use `--agent claude` or `--agent custom --destination PATH` for another runtime.
+For a team-only installation supply `--work-root /absolute/team/knowledgebase`
+instead of `--personal-root`. The installer reports paths in each installed skill.
+Existing configuration is preserved; inspect it before using `--force-config`.
+Installed commands retain the Python interpreter and dependency environment used
+for installation. Keep that environment available or reinstall from its replacement.
+`--dry-run` writes nothing. `--status` checks the release and installed hashes.
+Modified or customized retired packages require review before replacement.
 
-### KB workflow dashboard
-
-`projects/kb-workflow-dashboard/` is a dependency-free local web dashboard. It is read-only in the MVP.
-
-```bash
-python3 projects/kb-workflow-dashboard/server.py --kb-root /path/to/your/vault/knowledgebase
+```sh
+.venv/bin/python /path/to/kb-tools/kb-search --config /path/to/kb-config.md \
+  --domain personal --context --topic obsidian -q "local files"
+.venv/bin/python /path/to/kb-tools/kb-search --config /path/to/kb-config.md \
+  --domain work --context
+.venv/bin/python /path/to/kb-tools/kb-search --config /path/to/kb-config.md \
+  --domain work --body -q "deployment decision" --json
 ```
 
-Open `http://127.0.0.1:8787`.
+Domains have separate explicit roots. Missing configuration never selects the
+other domain. Global body search covers arbitrary Markdown collections. Topic
+and project selectors remain scoped. Work context prefers `_context-map.md` at
+the selected root, otherwise one eligible nested map. Ambiguity requires a root
+pointer or explicit file reading. Context without a query reads entry points only.
+Scoped fallback prefers that project's map, otherwise a unique global map outside
+`projects/` and `topics/`. It never loads a sibling project's map implicitly.
 
----
+Expand with `--headings PATH`, then `--read PATH --heading "Exact heading"` or
+`--lines START:END`. Citations include original lines and SHA-256. Use
+`--expect-sha256 HASH` to reject changed evidence. Sources need `--sources`.
+Operational output, archives, hidden directories and governance instructions
+stay out of ordinary results. Explicit operational reads need `--include-excluded`.
 
-## Plugin settings
+Output defaults to 12,000 UTF-8 bytes, including citations and JSON encoding.
+Inspect clipping and omitted-result markers even on exit 0.
+`result_limit_reached` signals matching content beyond the retained results;
+omitted counts are lower bounds after pruning. Read errors or scan limits
+produce incomplete retrieval with exit 3. Exit 1 means a completed lexical
+search had no matches; it does not prove a concept absent. Reads are capped at
+2 MiB per file, 64 MiB total and 20,000 traversal entries. Directory enumeration
+is not a hard memory bound. No lookup builds an index, writes a log or starts an app.
 
-After enabling the plugin in Obsidian, configure it via **Settings → KB Bot**:
+## Task skills and contracts
 
-| Setting | Default | Notes |
-|---|---|---|
-| API Key | *(empty)* | Your Anthropic API key — required |
-| Model | `claude-sonnet-4-6` | Any `claude-*` model ID |
-| Max tokens | `1024` | Response length cap for in-vault queries |
+| Skill | Purpose |
+|---|---|
+| `kb-query` | Read-only topic, project and evidence context. |
+| `kb-project` | Existing-project discovery, context, init and wrap. |
+| `kb-audit` | Structure, exact duplicates, contract drift and selected evidence. |
+| `kb-ingest` | Personal source publication through validation and independent review. |
+| `kb-synthesise` | Personal article maintenance with citations and conflict handling. |
 
-Settings persist to `.obsidian/plugins/kb-bot/data.json` (gitignored).
+Only retrieve KB context missing from the prompt and relevant code. Skill
+discovery does not guarantee every session consults the KB. Prompt caching is
+separate from durable knowledge. Query instructions do not load write contracts.
 
----
+The Personal contract has one short shared policy, data schemas and task-specific
+`_workflows/` pages. Skills route to those pages instead of repeating procedures.
+Publication uses deterministic validation, evidence and exact-draft review
+receipts. A successful publication does not establish truth or completed synthesis.
+Team KBs retain their own review, authorship and evidence contracts.
 
-## KB conventions
+## Audit and maintain
 
-The full structural specification lives in `knowledgebase/_schema.md` and the behavioural rules in `knowledgebase/_rules.md`. Key points:
+```sh
+.venv/bin/python scripts/kb-audit --domain personal --kb-root knowledgebase --json
+.venv/bin/python scripts/kb-audit --domain personal --kb-root knowledgebase --contracts --json
+```
 
-- **Authorship guard:** The agent only writes to files it created (`author: kb-bot` in frontmatter). It will never touch user-created notes.
-- **Navigation:** Agents read `_index.md` → `_summary.md` → individual notes in order, loading only what is needed.
-- **Page creation threshold:** Concept notes are stubs (one sentence) for 1 source; full articles (500–1,500 words) for 2+ sources.
-- **Source notes are immutable** after initial write — provenance is always traceable.
-- **LaTeX** throughout for mathematical content (`$...$` inline, `$$...$$` block).
+The first command reports structural and duplicate evidence. Hash equality does
+not select ownership or authorize deletion. Work metadata checks are advisory
+helpers for the supplied team profile, not a universal schema for every team.
+The contract check requires its complete known file set and checks reviewed-byte
+hashes, links, retired references and size. It does not prove semantic consistency.
+After reviewing an intentional Personal contract edit, explicitly run
+`scripts/build-contract-manifest.py --kb-root ROOT` to record it.
 
----
+Maintain readable articles selectively. A source can change an article, add a
+bounded disagreement or make no material contribution. Preserve human edits and
+source bytes. No per-source page quota, global startup scan or unsolicited triage
+is required. Retrieval indexes remain derived and optional.
 
-## Adding a new topic
+## Optional Obsidian plugin
 
-Run `/kb-ingest <url>` and the skill will propose a topic assignment. To create a topic manually:
+The Markdown core does not require Obsidian. To use the in-vault Anthropic adapter,
+run `npm install` and `npm run build` in `plugin/`, then copy `main.js` and
+`manifest.json` to your vault's `.obsidian/plugins/kb-bot/`. Enable it in Obsidian.
+Choose your available model ID and API key explicitly. API billing is separate
+from agent subscriptions. The plugin expects `knowledgebase/` inside its vault
+and retains its own write guard. This adapter is not the team-profile writer.
 
-1. Create `knowledgebase/topics/<your-topic>/` with subfolders `sources/`, `notes/concepts/`, `notes/entities/`, `notes/syntheses/`
-2. Create `knowledgebase/topics/<your-topic>/_summary.md` (use an existing `_summary.md` as a template)
-3. Add the topic to `knowledgebase/_index.md`
-4. Add sources to `knowledgebase/topics/<your-topic>/reading-list.md`
-5. Run `/kb-queue <your-topic>` to begin ingestion
+## Develop and contribute
 
----
+See [the contribution guide](docs/portable-hardening.md) for migration, tests and
+export review. The [upstream comparison](docs/upstream-contribution.md) groups
+the changes for review. `scripts/sync-from-live.sh` is a read-only comparison
+planner, not a recursive copy operation. No live notes, custody payloads, logs,
+receipts, private configuration or scheduler state belong in a contribution.
 
 ## License
 
-MIT
+MIT, as in the upstream starter. Existing authorship remains intact.

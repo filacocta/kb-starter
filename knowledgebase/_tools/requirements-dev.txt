@@ -1,0 +1,4 @@
+-r requirements.txt
+pytest>=8,<9
+Pillow>=10,<13
+ImageHash>=4,<5

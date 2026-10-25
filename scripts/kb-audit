@@ -1,0 +1,168 @@
+#!/usr/bin/env python3
+"""Read-only inventory and exact-byte duplicate audit of active KB Markdown."""
+
+import argparse
+from collections import Counter, defaultdict
+import datetime
+import hashlib
+import json
+from pathlib import Path
+import re
+import subprocess
+import sys
+sys.dont_write_bytecode = True
+
+import yaml
+
+from kb_config import KBConfigError, iter_markdown, read_regular_text, resolve_kb_root
+from kb_retrieval import MAX_FILE_BYTES, NOISE_DIRS, role
+
+
+def check_contracts(root):
+    manifest = json.loads(read_regular_text(root / "_contract.json", max_bytes=MAX_FILE_BYTES))
+    specification = json.loads(read_regular_text(Path(__file__).with_name("kb_contract_spec.json"), max_bytes=MAX_FILE_BYTES))
+    if (not isinstance(manifest, dict) or manifest.get("author") != "kb-bot" or manifest.get("version") != 1
+            or not isinstance(manifest.get("files"), dict) or not manifest["files"]):
+        raise KBConfigError("invalid KB contract manifest")
+    if manifest.get("release") != specification["release"] or set(manifest["files"]) != set(specification["paths"]):
+        raise KBConfigError("contract manifest must name the recognized release and its complete required file set")
+    errors = []
+    words = 0
+    for relative, expected in manifest["files"].items():
+        path = Path(relative)
+        if path.is_absolute() or ".." in path.parts or path.suffix != ".md" or not re.fullmatch(r"[a-f0-9]{64}", str(expected)):
+            raise KBConfigError("invalid path/hash in KB contract manifest")
+        try:
+            text = read_regular_text(root / path, max_bytes=MAX_FILE_BYTES)
+            words += len(text.split())
+            if hashlib.sha256(text.encode()).hexdigest() != expected:
+                errors.append({"path": relative, "issue": "contract differs from its recorded release; review and regenerate manifest"})
+            if re.search(r"\bRules?\s+\d", text) or re.search(r"_rules-(?:media|synthesis)\.md|/kb-(?:ask|scan|queue|wrap|project-init)\b", text):
+                errors.append({"path": relative, "issue": "retired policy reference; use the selected _workflows page"})
+            for target in re.findall(r"\[[^\]]+\]\(([^)]+)\)", text):
+                target = target.split('#', 1)[0]
+                if not target or re.match(r"[a-z][a-z0-9+.-]*:", target, re.I):
+                    continue
+                destination = (root / path.parent / target).resolve()
+                if not destination.is_relative_to(root) or not destination.exists():
+                    errors.append({"path": relative, "issue": f"missing/outside contract link: {target}"})
+        except (KBConfigError, OSError) as exc:
+            errors.append({"path": relative, "issue": str(exc)})
+    for relative in ("_rules-media.md", "_rules-synthesis.md"):
+        if (root / relative).exists():
+            errors.append({"path": relative, "issue": "retired rulebook is still active; migrate callers and remove it"})
+    if words > 6000:
+        errors.append({"path": "_contract.json", "issue": "contract exceeds the 6000-word release budget; remove duplication or unused procedure"})
+    return {"status": "fail" if errors else "pass", "release": manifest.get("release"),
+            "files_checked": len(manifest["files"]), "words": words, "errors": errors}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--domain", required=True, choices=("personal", "work"))
+    parser.add_argument("--kb-root")
+    parser.add_argument("--config")
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--limit", type=int, default=20)
+    parser.add_argument("--changed-from", help="Git revision for changed-file conformance checks")
+    parser.add_argument("--include-excluded", action="store_true", help="include legacy indexes and other operational Markdown")
+    parser.add_argument("--contracts", action="store_true", help="verify the Personal KB contract release without scanning topic content")
+    args = parser.parse_args()
+    if not 0 <= args.limit <= 10000:
+        parser.error("limit must be between 0 and 10000")
+    root = resolve_kb_root(args.kb_root, config=args.config, domain=args.domain)
+    if args.contracts:
+        if args.domain != "personal":
+            parser.error("work KB contracts belong to their repository governance; Personal contracts do not apply")
+        report = check_contracts(root)
+        print(json.dumps(report, indent=2) if args.json else f"Contracts {report['status']}: {report['files_checked']} files, {report['words']} words; {len(report['errors'])} errors")
+        return int(bool(report["errors"]))
+    changed = None
+    if args.changed_from:
+        result = subprocess.run(["git", "-C", str(root), "diff", "--name-only", "--diff-filter=ACMR", "--relative", args.changed_from, "--", "*.md"], capture_output=True, text=True)
+        if result.returncode:
+            raise KBConfigError("cannot obtain changed-file set from Git")
+        changed = set(result.stdout.splitlines())
+        untracked = subprocess.run(["git", "-C", str(root), "ls-files", "--others", "--exclude-standard", "--full-name", "--", "*.md"], capture_output=True, text=True)
+        prefix = subprocess.run(["git", "-C", str(root), "rev-parse", "--show-prefix"], capture_output=True, text=True).stdout.strip()
+        changed.update(path[len(prefix):] for path in untracked.stdout.splitlines() if path.startswith(prefix))
+    groups = defaultdict(list)
+    counts = Counter()
+    topics = defaultdict(Counter)
+    findings = []
+    errors = []
+    for path in iter_markdown(root, (".",), max_entries=20000,
+                              exclude_dirs=() if args.include_excluded else NOISE_DIRS):
+        relative = path.relative_to(root).as_posix()
+        kind = role(relative)
+        if kind == "excluded" and not args.include_excluded:
+            counts["excluded_files"] += 1
+            continue
+        try:
+            text = read_regular_text(path, max_bytes=MAX_FILE_BYTES)
+        except (KBConfigError, OSError) as exc:
+            errors.append({"path": relative, "reason": str(exc)})
+            continue
+        raw = text.encode("utf-8")
+        counts["files"] += 1
+        counts["bytes"] += len(raw)
+        counts[kind] += 1
+        groups[hashlib.sha256(raw).hexdigest()].append((relative, len(raw)))
+        if relative.startswith("topics/"):
+            topics[relative.split("/")[1]]["sources" if kind == "source" else "notes"] += 1
+        issues = []
+        front = re.match(r"\A---\s*\n(.*?)\n---(?:\s*\n|$)", text, re.S)
+        metadata = {}
+        if front:
+            try:
+                metadata = yaml.safe_load(front[1]) or {}
+                if not isinstance(metadata, dict):
+                    issues.append("frontmatter must be a mapping")
+                    metadata = {}
+            except yaml.YAMLError:
+                issues.append("frontmatter does not parse as YAML")
+        if args.domain == "work":
+            missing = [key for key in ("title", "type", "status", "modified") if not metadata.get(key)]
+            if missing:
+                issues.append("missing fields: " + ", ".join(missing))
+            if "modified" in metadata:
+                value = str(metadata["modified"])
+                try:
+                    date = datetime.date.fromisoformat(value)
+                    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) or date > datetime.date.today():
+                        raise ValueError()
+                except ValueError:
+                    issues.append("modified must be YYYY-MM-DD and not in the future")
+            if "[[knowledgebase/" in text:
+                issues.append("wikilinks must omit knowledgebase/ prefix")
+            if metadata.get("status") == "current-claim" and "## Evidence boundary" not in text:
+                issues.append("current-claim requires an Evidence boundary section")
+        if issues:
+            findings.append({"path": relative, "issues": issues, "changed": changed is not None and relative in changed})
+    duplicates = [{"sha256": sha, "paths": [p for p, _ in copies], "redundant_bytes": copies[0][1] * (len(copies) - 1)}
+                  for sha, copies in groups.items() if len(copies) > 1]
+    duplicates.sort(key=lambda item: (-item["redundant_bytes"], item["paths"][0]))
+    checked_errors = sum(item["changed"] for item in findings)
+    report = {"domain": args.domain, "root": str(root), "counts": dict(counts),
+              "duplicate_groups": len(duplicates), "redundant_bytes": sum(d["redundant_bytes"] for d in duplicates),
+              "duplicates": duplicates[:args.limit], "omitted_duplicate_groups": max(0, len(duplicates) - args.limit),
+              "metadata_debt_files": len(findings), "changed_files_with_errors": checked_errors,
+              "findings": findings[:args.limit], "read_errors": errors,
+              "topics": {key: dict(value) for key, value in sorted(topics.items())},
+              "scope": "Active Markdown only. Hash identity does not choose ownership. No files changed."}
+    if args.json:
+        print(json.dumps(report, indent=2))
+    else:
+        print(f"{args.domain}: {counts['files']} files, {counts['bytes']} bytes; {len(duplicates)} exact duplicate groups; {len(findings)} metadata debt files.")
+        for group in duplicates[:args.limit]:
+            print(f"{group['sha256'][:12]}: " + " | ".join(group["paths"]))
+        print(f"Changed files with conformance errors: {checked_errors}. Read errors: {len(errors)}. No files changed.")
+    return 3 if errors else 1 if checked_errors else 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (KBConfigError, OSError, ValueError, TypeError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(2)
