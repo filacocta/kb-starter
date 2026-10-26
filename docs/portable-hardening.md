@@ -35,6 +35,12 @@ in the existing article rather than generating a parallel ledger.
 Do not replace an existing team's governance with the example profile. Map its
 root explicitly and retain its own metadata, authorship and review process.
 
+Runtime 2.3 retires `kb-search --peek`; use domain-bound `--headings` and `--read`.
+Workflow/template and capture records remain explicitly readable and auditable,
+while ordinary answer retrieval omits them. Personal lint now supports project
+scopes, rejects unsafe or missing selectors and reports selected file counts.
+Use an unscoped lint invocation for a deliberately global media inventory.
+
 ## Verify changes
 
 Use an isolated development environment:

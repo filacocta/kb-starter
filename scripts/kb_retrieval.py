@@ -16,6 +16,8 @@ MAX_SCAN_BYTES = 64 * 1024 * 1024
 NOISE_DIRS = {"archive", "archives", "staging", "daily", "runs", "_tools", "_library", "_media"}
 CONTEXT_FILES = {"_summary.md", "_todos.md", "_context-map.md"}
 GOVERNANCE_FILES = {"AGENTS.md", "CLAUDE.md", "SCHEMA.md", "CONTRIBUTING.md"}
+CONTROL_DIRS = {"_workflows", "_templates", "templates"}
+CAPTURE_DIRS = {"readinglist", "clippings"}
 
 
 @dataclass(frozen=True)
@@ -53,6 +55,11 @@ def role(path):
         return "excluded"
     if "sources" in parts or "media" in parts:
         return "source"
+    directories = parts[2:-1] if parts[0] in {"topics", "projects"} else parts[:-1]
+    if CONTROL_DIRS.intersection(directories):
+        return "control"
+    if CAPTURE_DIRS.intersection(directories):
+        return "capture"
     if parts[-1] in CONTEXT_FILES:
         return "context"
     if parts[-1].startswith("_") or parts[-1] in GOVERNANCE_FILES | {"reading-list.md", "README.md"}:
@@ -205,7 +212,7 @@ def retrieve(root, args):
     for path in candidates():
         relative = str(path.relative_to(root))
         kind = role(relative)
-        if kind == "excluded" or (kind == "source" and not args.sources):
+        if kind in {"excluded", "control", "capture"} or (kind == "source" and not args.sources):
             continue
         if args.context and not query and relative not in primary_set:
             continue

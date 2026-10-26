@@ -151,8 +151,10 @@ def is_library_payload(path: Path, kb_root: Path) -> bool:
     return False
 
 
-def iter_md_files(kb_root: Path, topic: str | None) -> list[Path]:
-    if topic:
+def iter_md_files(kb_root: Path, topic: str | None = None, *, project: str | None = None) -> list[Path]:
+    if project:
+        roots = [kb_root / "projects" / project]
+    elif topic:
         roots = [kb_root / "topics" / topic]
     else:
         roots = [kb_root]
@@ -161,11 +163,14 @@ def iter_md_files(kb_root: Path, topic: str | None) -> list[Path]:
         if not root.exists():
             continue
         for path in root.rglob("*.md"):
-            parts = set(path.relative_to(kb_root).parts)
-            if parts & SKIP_DIRS:
+            parts = path.relative_to(kb_root).parts
+            directories = parts[2:-1] if parts[0] in {"topics", "projects"} else parts[:-1]
+            if set(directories) & SKIP_DIRS:
                 continue
             if is_library_payload(path, kb_root):
                 continue
+            if path.is_symlink() or not path.resolve().is_relative_to(kb_root):
+                raise ValueError(f"unsafe Markdown path: {path.relative_to(kb_root)}")
             files.append(path)
     return sorted(files)
 
@@ -786,7 +791,8 @@ def _add_project_code_state_findings(
         )
 
 
-def check_projects(kb_root: Path, findings: list[dict[str, Any]], stale_days: int, topic: str | None) -> None:
+def check_projects(kb_root: Path, findings: list[dict[str, Any]], stale_days: int,
+                   topic: str | None = None, *, project: str | None = None) -> None:
     # Project entries are not topic-scoped; skip this check when a single topic is requested.
     if topic:
         return
@@ -799,7 +805,9 @@ def check_projects(kb_root: Path, findings: list[dict[str, Any]], stale_days: in
     except ImportError as exc:
         add(findings, "error", "project-status-tooling", "_tools/kb-project-status.py", str(exc))
         return
-    for proj in sorted(p for p in projects_root.iterdir() if p.is_dir() and not p.is_symlink()):
+    projects = [projects_root / project] if project else sorted(
+        p for p in projects_root.iterdir() if p.is_dir() and not p.is_symlink())
+    for proj in projects:
         slug = proj.name
         if slug.startswith((".", "_")):
             continue
@@ -902,8 +910,10 @@ def check_projects(kb_root: Path, findings: list[dict[str, Any]], stale_days: in
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run structural lint checks for the KB.")
     parser.add_argument("--kb-root", default=str(Path(__file__).resolve().parents[1]))
-    parser.add_argument("--topic")
-    parser.add_argument("--all", action="store_true", help="lint all topics and top-level KB files")
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument("--topic")
+    scope.add_argument("--project")
+    scope.add_argument("--all", action="store_true", help="lint all topics and top-level KB files")
     parser.add_argument("--check", action="append", choices=["frontmatter", "authorship", "wikilinks", "media", "reading-lists", "projects", "all"], default=None)
     parser.add_argument("--stale-days", type=int, default=DEFAULT_STALE_DAYS, help="staleness window for the projects check")
     return parser
@@ -912,17 +922,34 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     kb_root = Path(args.kb_root).expanduser().resolve()
-    if not kb_root.exists():
-        print(json.dumps({"error": f"KB root not found: {kb_root}"}))
+    if not kb_root.is_dir():
+        print(json.dumps({"error": f"KB root is not a directory: {kb_root}"}))
         return 2
-    if args.topic and args.all:
-        print(json.dumps({"error": "use either --topic or --all, not both"}))
+    slug = args.topic if args.topic is not None else args.project
+    if slug is not None:
+        collection = kb_root / ("topics" if args.topic is not None else "projects")
+        selected = collection / slug
+        if (not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug)
+                or collection.is_symlink() or selected.is_symlink()
+                or not selected.is_dir() or not selected.resolve().is_relative_to(kb_root)):
+            print(json.dumps({"error": "select an existing safe topic or project slug"}))
+            return 2
+    applicable = {"frontmatter", "authorship", "wikilinks", "media", "reading-lists", "projects"}
+    if args.topic:
+        applicable -= {"media", "projects"}
+    elif args.project:
+        applicable -= {"media", "reading-lists"}
+    requested = set(args.check or ["all"])
+    incompatible = requested - {"all"} - applicable
+    if incompatible:
+        print(json.dumps({"error": "checks incompatible with selected scope: " + ", ".join(sorted(incompatible))}))
         return 2
-
-    checks = set(args.check or ["all"])
-    if "all" in checks:
-        checks = {"frontmatter", "authorship", "wikilinks", "media", "reading-lists", "projects"}
-    files = iter_md_files(kb_root, args.topic if not args.all else None)
+    checks = applicable if "all" in requested else requested
+    try:
+        files = iter_md_files(kb_root, args.topic, project=args.project)
+    except (OSError, ValueError) as exc:
+        print(json.dumps({"error": str(exc)}))
+        return 2
     findings: list[dict[str, Any]] = []
     if "authorship" in checks:
         check_authorship(kb_root, files, findings)
@@ -935,11 +962,13 @@ def main(argv: list[str] | None = None) -> int:
     if "reading-lists" in checks:
         check_reading_lists(kb_root, args.topic if not args.all else None, findings)
     if "projects" in checks:
-        check_projects(kb_root, findings, args.stale_days, args.topic if not args.all else None)
+        check_projects(kb_root, findings, args.stale_days, project=args.project)
 
     result = {
         "kb_root": str(kb_root),
-        "scope": args.topic or "all",
+        "scope": slug or "all",
+        "scope_kind": "topic" if args.topic else "project" if args.project else "all",
+        "files_checked": len(files),
         "checks": sorted(checks),
         "finding_count": len(findings),
         "findings": findings,

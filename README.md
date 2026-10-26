@@ -63,6 +63,9 @@ Expand with `--headings PATH`, then `--read PATH --heading "Exact heading"` or
 `--expect-sha256 HASH` to reject changed evidence. Sources need `--sources`.
 Operational output, archives, hidden directories and governance instructions
 stay out of ordinary results. Explicit operational reads need `--include-excluded`.
+Workflow/template files and unreviewed captures also stay out of ordinary results.
+Their explicit reads retain `control` or `capture` roles; audits still inspect them.
+Legacy `--peek` is retired. Use the cited `--headings` and `--read` selectors.
 
 Output defaults to 12,000 UTF-8 bytes, including citations and JSON encoding.
 Inspect clipping and omitted-result markers even on exit 0.
@@ -98,11 +101,15 @@ Team KBs retain their own review, authorship and evidence contracts.
 ```sh
 .venv/bin/python scripts/kb-audit --domain personal --kb-root knowledgebase --json
 .venv/bin/python scripts/kb-audit --domain personal --kb-root knowledgebase --contracts --json
+.venv/bin/python knowledgebase/_tools/kb-lint.py --kb-root knowledgebase --project example --check frontmatter
 ```
 
 The first command reports structural and duplicate evidence. Hash equality does
 not select ownership or authorize deletion. Work metadata checks are advisory
 helpers for the supplied team profile, not a universal schema for every team.
+Personal lint accepts one existing `--topic` or `--project` scope and reports the
+selected file count. Scoped defaults omit global media checks. Explicit checks
+that cannot honor the requested scope fail rather than silently inspecting elsewhere.
 The contract check requires its complete known file set and checks reviewed-byte
 hashes, links, retired references and size. It does not prove semantic consistency.
 After reviewing an intentional Personal contract edit, explicitly run

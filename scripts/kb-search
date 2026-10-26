@@ -18,21 +18,21 @@ Usage:
   kb-search --stub                           # only stub notes
   kb-search --limit 20                       # max results (default: 15)
   kb-search --json                           # JSON output
-  kb-search --peek topics/foo/bar.md         # frontmatter + first para of one file
+  kb-search --domain personal --read topics/foo/bar.md --lines 1:20
 
 Flags can be combined: --topic X --type concept --query "rule"
 
 Exit codes:
   0 = results found
   1 = no results
-  2 = error (index not found)
+  2 = invalid arguments, unsafe selection or missing index
+  3 = useful but incomplete live retrieval
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 sys.dont_write_bytecode = True
 from pathlib import Path
@@ -50,9 +50,6 @@ from kb_config import (  # noqa: E402
 # ---------------------------------------------------------------------------
 # Scoring
 # ---------------------------------------------------------------------------
-
-FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
-
 
 def score_record(rec: dict, query_terms: list[str], tag_filter: str,
                  topic_filter: str, type_filter: str, stub_only: bool) -> float:
@@ -139,39 +136,6 @@ def format_compact(results: list[tuple[float, dict]]) -> str:
     return "\n\n".join(parts)
 
 
-def peek_file(kb_root: Path, rel_path: str) -> str:
-    """Return frontmatter + first paragraph of one file."""
-    requested = Path(rel_path).expanduser()
-    if requested.is_absolute() or ".." in requested.parts:
-        return f"File not found: {rel_path}"
-    path = kb_root / requested
-    try:
-        path.relative_to(kb_root)
-    except ValueError:
-        return f"File not found: {rel_path}"
-    try:
-        text = read_regular_text(path)
-    except (KBConfigError, OSError):
-        return f"File not found: {rel_path}"
-
-    m = FRONTMATTER_RE.match(text)
-    if not m:
-        return text[:500]
-
-    fm_text = text[:m.end()]
-    body = text[m.end():]
-    # First non-empty paragraph
-    para_lines: list[str] = []
-    for line in body.splitlines():
-        if line.strip():
-            para_lines.append(line)
-        elif para_lines:
-            break
-
-    first_para = "\n".join(para_lines)[:400]
-    return f"{fm_text.rstrip()}\n\n{first_para}"
-
-
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -189,7 +153,7 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--compact", action="store_true", help="Compact LLM-friendly text output (default)")
     parser.add_argument("--table", action="store_true", help="Markdown table output")
-    parser.add_argument("--peek", metavar="PATH", help="Show frontmatter + first paragraph of a file")
+    parser.add_argument("--peek", metavar="PATH", help=argparse.SUPPRESS)
     parser.add_argument("--stats", action="store_true", help="Show index statistics instead of searching")
     parser.add_argument("--kb-root", default=None)
     parser.add_argument("--config", default=None)
@@ -209,6 +173,9 @@ def main() -> int:
     parser.add_argument("--budget-bytes", type=int, default=12000)
     args = parser.parse_args()
 
+    if args.peek is not None:
+        parser.error("--peek is retired; use --domain D --headings PATH, then --read PATH --heading TITLE or --lines A:B")
+
     try:
         kb_root = resolve_kb_root(args.kb_root, config=args.config, domain=args.domain)
     except KBConfigError as exc:
@@ -217,7 +184,7 @@ def main() -> int:
 
     if args.body or args.context or args.read is not None or args.headings is not None:
         args.limit = 5 if args.limit is None else args.limit
-        if args.type_ or args.tag or args.stub or args.stats or args.peek or args.table:
+        if args.type_ or args.tag or args.stub or args.stats or args.table:
             parser.error("metadata filters do not apply to live modes; use --area, --topic or --project")
         if not args.domain:
             print("error: live retrieval requires --domain personal or work", file=sys.stderr)
@@ -228,10 +195,6 @@ def main() -> int:
     args.limit = 15 if args.limit is None else args.limit
     if args.area or args.project or args.sources or args.include_excluded or args.lines or args.heading or args.expect_sha256:
         parser.error("live retrieval options require --body, --context, --read or --headings")
-
-    if args.peek:
-        print(peek_file(kb_root, args.peek))
-        return 0
 
     index_path = kb_root / "_kb-index.json"
     if not index_path.exists():

@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "_tools" / "kb-lint.py"
 
 
-@pytest.mark.parametrize('topic', ['missing', '../../outside', '../outside', 'demo/../other'])
+@pytest.mark.parametrize('topic', ['', 'missing', '../../outside', '../outside', 'demo/../other'])
 def test_cli_rejects_missing_or_escaping_topic_scope(tmp_path, topic):
     root = tmp_path / 'kb'
     (root / 'topics/demo').mkdir(parents=True)
@@ -62,12 +62,69 @@ def test_cli_limits_project_checks_and_reports_checked_files(tmp_path):
     assert report['scope_kind'] == 'project' and not report['findings']
 
 
+@pytest.mark.parametrize('slug', ['clippings', 'readinglist'])
+@pytest.mark.parametrize('collection,selector', [('projects', '--project'), ('topics', '--topic')])
+def test_collection_names_do_not_skip_requested_lint_files(tmp_path, slug, collection, selector):
+    target = tmp_path / collection / slug
+    target.mkdir(parents=True)
+    (target / 'note.md').write_text('# Missing metadata\n')
+    result = subprocess.run([sys.executable, str(SCRIPT), '--kb-root', str(tmp_path),
+                             selector, slug, '--check', 'frontmatter'], capture_output=True, text=True)
+    assert result.returncode == 1, result.stdout
+    report = json.loads(result.stdout)
+    assert report['files_checked'] == 1 and report['finding_count'] == 1
+
+
 def test_cli_reports_an_existing_empty_topic_without_claiming_files_checked(tmp_path):
     (tmp_path / 'topics/demo').mkdir(parents=True)
     result = subprocess.run([sys.executable, str(SCRIPT), '--kb-root', str(tmp_path),
                              '--topic', 'demo', '--check', 'frontmatter'], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)['files_checked'] == 0
+
+
+@pytest.mark.parametrize('selector', ['--topic', '--project'])
+@pytest.mark.parametrize('extra', [[], ['--check', 'all']])
+def test_scoped_defaults_never_invoke_global_checks(tmp_path, monkeypatch, selector, extra):
+    collection = 'topics' if selector == '--topic' else 'projects'
+    (tmp_path / collection / 'demo').mkdir(parents=True)
+    lint = load_lint_module()
+    def global_check(*args, **kwargs):
+        pytest.fail('scoped lint invoked an unrelated global check')
+    monkeypatch.setattr(lint, 'check_media', global_check)
+    if selector == '--topic':
+        monkeypatch.setattr(lint, 'check_projects', global_check)
+        monkeypatch.setattr(lint, 'check_reading_lists', lambda *args, **kwargs: None)
+    else:
+        monkeypatch.setattr(lint, 'check_reading_lists', global_check)
+        monkeypatch.setattr(lint, 'check_projects', lambda *args, **kwargs: None)
+    assert lint.main(['--kb-root', str(tmp_path), selector, 'demo', *extra]) == 0
+
+
+def test_project_validation_reads_only_the_requested_board(tmp_path):
+    import datetime
+    write_lint_project(tmp_path, modified=datetime.date.today().isoformat(), todos='## Backlog\n')
+    (tmp_path / 'projects/unrelated').mkdir()
+    result = subprocess.run([sys.executable, str(SCRIPT), '--kb-root', str(tmp_path),
+                             '--project', 'example', '--check', 'projects'], capture_output=True, text=True)
+    assert result.returncode == 1, result.stderr
+    report = json.loads(result.stdout)
+    assert report['files_checked'] == 2
+    assert report['findings'] and all(row['path'].startswith('projects/example/') for row in report['findings'])
+
+
+@pytest.mark.parametrize('args', [
+    ['--topic', 'demo', '--check', 'all', '--check', 'projects'],
+    ['--topic', 'demo', '--check', 'media'],
+    ['--project', 'demo', '--check', 'reading-lists'],
+    ['--project', 'demo', '--check', 'all', '--check', 'media'],
+])
+def test_explicit_incompatible_checks_are_not_silently_dropped(tmp_path, args):
+    (tmp_path / 'topics/demo').mkdir(parents=True)
+    (tmp_path / 'projects/demo').mkdir(parents=True)
+    result = subprocess.run([sys.executable, str(SCRIPT), '--kb-root', str(tmp_path), *args], capture_output=True, text=True)
+    assert result.returncode == 2
+    assert 'incompatible' in json.loads(result.stdout)['error']
 
 
 def load_lint_module():

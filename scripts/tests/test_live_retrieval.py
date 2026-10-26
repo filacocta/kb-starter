@@ -81,6 +81,25 @@ def test_control_folder_cannot_supply_a_default_context_map(tmp_path):
     assert json.loads(result.stdout)['results'][0]['path'] == 'team-share/_context-map.md'
 
 
+@pytest.mark.parametrize('slug', ['templates', 'clippings', 'readinglist'])
+@pytest.mark.parametrize('domain,collection,selector', [
+    ('work', 'projects', '--project'), ('personal', 'topics', '--topic')])
+def test_reserved_words_can_still_name_knowledge_scopes(tmp_path, slug, domain, collection, selector):
+    path = f'{collection}/{slug}/_summary.md'
+    note(tmp_path, path, '# Scope\nknownscopecanary\n')
+    result = invoke(tmp_path, '--domain', domain, '--context', selector, slug, '--json')
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)['results'][0]['path'] == path
+
+
+def test_source_subfolders_do_not_turn_evidence_into_templates(tmp_path):
+    path = 'topics/demo/sources/templates/original.md'
+    note(tmp_path, path, '# Source\nsourcecanary\n')
+    result = invoke(tmp_path, '--domain', 'personal', '--body', '-q', 'sourcecanary', '--sources', '--json')
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)['results'][0]['role'] == 'source'
+
+
 @pytest.mark.parametrize('has_index', [False, True])
 def test_retired_peek_reports_migration_before_root_or_index_access(tmp_path, has_index):
     source = note(tmp_path, 'sources/archive/original.md', '# Original\nprivatecanary\n')

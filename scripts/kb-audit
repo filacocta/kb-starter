@@ -6,6 +6,7 @@ from collections import Counter, defaultdict
 import datetime
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -79,13 +80,17 @@ def main():
         return int(bool(report["errors"]))
     changed = None
     if args.changed_from:
-        result = subprocess.run(["git", "-C", str(root), "diff", "--name-only", "--diff-filter=ACMR", "--relative", args.changed_from, "--", "*.md"], capture_output=True, text=True)
+        result = subprocess.run(["git", "-C", str(root), "diff", "-z", "--name-only", "--diff-filter=ACMR", "--relative", args.changed_from, "--", "*.md"], capture_output=True)
         if result.returncode:
             raise KBConfigError("cannot obtain changed-file set from Git")
-        changed = set(result.stdout.splitlines())
-        untracked = subprocess.run(["git", "-C", str(root), "ls-files", "--others", "--exclude-standard", "--full-name", "--", "*.md"], capture_output=True, text=True)
-        prefix = subprocess.run(["git", "-C", str(root), "rev-parse", "--show-prefix"], capture_output=True, text=True).stdout.strip()
-        changed.update(path[len(prefix):] for path in untracked.stdout.splitlines() if path.startswith(prefix))
+        changed = {os.fsdecode(path) for path in result.stdout.split(b"\0") if path}
+        untracked = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--others", "--exclude-standard", "--full-name", "--", "*.md"], capture_output=True)
+        prefix_result = subprocess.run(["git", "-C", str(root), "rev-parse", "--show-prefix"], capture_output=True)
+        if untracked.returncode or prefix_result.returncode:
+            raise KBConfigError("cannot obtain untracked-file scope from Git")
+        prefix = os.fsdecode(prefix_result.stdout).removesuffix("\n")
+        changed.update(os.fsdecode(path)[len(prefix):] for path in untracked.stdout.split(b"\0")
+                       if path and os.fsdecode(path).startswith(prefix))
     groups = defaultdict(list)
     counts = Counter()
     topics = defaultdict(Counter)
