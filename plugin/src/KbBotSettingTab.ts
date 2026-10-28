@@ -18,7 +18,7 @@ export class KbBotSettingTab extends PluginSettingTab {
 			.setDesc("Your key from console.anthropic.com — stored locally in data.json.")
 			.addText(text =>
 				text
-					.setPlaceholder("sk-ant-…")
+					.setPlaceholder("Enter an API key")
 					.setValue(this.plugin.settings.apiKey)
 					.onChange(async value => {
 						this.plugin.settings.apiKey = value;
@@ -28,7 +28,7 @@ export class KbBotSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Model")
-			.setDesc("An available Anthropic model ID for your account. No model is selected automatically.")
+			.setDesc("Anthropic model ID available to your account. Choose the model explicitly.")
 			.addText(text =>
 				text
 					.setPlaceholder("Enter your available model ID")

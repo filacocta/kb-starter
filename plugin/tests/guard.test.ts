@@ -30,6 +30,11 @@ describe("isKbBotFile", () => {
 });
 
 describe("isInsideKb", () => {
+	it("rejects traversal before a vault API can normalize it", () => {
+		for (const path of ["knowledgebase/../journal/private.md", "knowledgebase/./note.md", "knowledgebase\\..\\journal\\private.md"]) {
+			expect(isInsideKb(path)).toBe(false);
+		}
+	});
 	it("returns true for a file directly in knowledgebase/", () => {
 		expect(isInsideKb("knowledgebase/_index.md")).toBe(true);
 	});

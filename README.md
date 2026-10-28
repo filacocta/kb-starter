@@ -122,6 +122,9 @@ is required. Retrieval indexes remain derived and optional.
 
 ## Optional Obsidian plugin
 
+The command is now `KB Bot: Ask`, with command ID `kb-bot:ask`.
+If you assigned a hotkey to the old `kb-bot:ask-kb-bot` command, reassign it.
+
 The Markdown core does not require Obsidian. To use the in-vault Anthropic adapter,
 run `npm install` and `npm run build` in `plugin/`, then copy `main.js` and
 `manifest.json` to your vault's `.obsidian/plugins/kb-bot/`. Enable it in Obsidian.

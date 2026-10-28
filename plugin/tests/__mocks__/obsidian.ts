@@ -1,4 +1,8 @@
-/** Minimal Obsidian API stubs for unit tests. */
+import { mock } from "node:test";
+
+export const requestUrl = mock.fn(async (_request: unknown): Promise<{ status: number; json: unknown }> => {
+	throw new Error("No request fixture configured");
+});
 
 export class TAbstractFile {
 	path = "";

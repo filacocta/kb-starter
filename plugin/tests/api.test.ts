@@ -1,7 +1,48 @@
-import { describe, it } from "node:test";
+import { describe, it, mock } from "node:test";
+import { requestUrl } from "obsidian";
 import { expect } from "expect";
 import { askClaude, buildPrompt, formatAsCallout } from "../src/api";
 import { DEFAULT_SETTINGS } from "../src/constants";
+import KbBotPlugin from "../src/KbBotPlugin";
+import { App } from "obsidian";
+
+mock.method(globalThis, "fetch", async () => { throw new Error("Network disabled in tests"); });
+
+describe("saved settings", () => {
+	it("keeps defaults for malformed persisted settings", async () => {
+		for (const saved of [null, [], { apiKey: 42, model: false, maxTokens: -1 }, { maxTokens: Infinity }]) {
+			const plugin = new KbBotPlugin(new App(), { id: "kb-bot" });
+			plugin.loadData = async () => saved;
+			await plugin.loadSettings();
+			expect(plugin.settings).toEqual(DEFAULT_SETTINGS);
+		}
+	});
+	it("preserves valid explicit settings without unknown fields", async () => {
+		const plugin = new KbBotPlugin(new App(), { id: "kb-bot" });
+		plugin.loadData = async () => ({ apiKey: "fixture-key", model: "fixture-model", maxTokens: 512, extra: true });
+		await plugin.loadSettings();
+		expect(plugin.settings).toEqual({ apiKey: "fixture-key", model: "fixture-model", maxTokens: 512 });
+	});
+});
+
+describe("Obsidian request adapter", () => {
+	const settings = { ...DEFAULT_SETTINGS, apiKey: "fixture-key", model: "fixture-model" };
+	it("uses Obsidian transport and returns a validated text block", async () => {
+		requestUrl.mock.mockImplementationOnce(async () => ({ status: 200, json: { content: [{ type: "text", text: "Answer" }] } }));
+		expect(await askClaude("Question", settings)).toBe("Answer");
+		expect(requestUrl.mock.calls.at(-1)?.arguments[0]).toMatchObject({ method: "POST", throw: false });
+	});
+	it("reports HTTP errors without consuming a malformed response", async () => {
+		requestUrl.mock.mockImplementationOnce(async () => ({ status: 429, json: null }));
+		await expect(askClaude("Question", settings)).rejects.toThrow("API error: 429");
+	});
+	it("rejects malformed successful responses", async () => {
+		for (const json of [null, {}, { content: [] }, { content: [{ type: "text", text: 42 }] }]) {
+			requestUrl.mock.mockImplementationOnce(async () => ({ status: 200, json }));
+			await expect(askClaude("Question", settings)).rejects.toThrow("Invalid API response");
+		}
+	});
+});
 
 describe("explicit model selection", () => {
 	it("has no prescribed model and rejects unconfigured calls before networking", async () => {

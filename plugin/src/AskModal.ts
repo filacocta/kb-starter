@@ -14,7 +14,7 @@ export class AskModal extends Modal {
 
 	onOpen(): void {
 		const { contentEl } = this;
-		contentEl.createEl("h2", { text: "Ask KB Bot" });
+		contentEl.createEl("h2", { text: "Ask a question" });
 
 		const input = contentEl.createEl("textarea", {
 			attr: { rows: "4", style: "width:100%; margin-bottom:8px; box-sizing:border-box;" },
@@ -24,10 +24,9 @@ export class AskModal extends Modal {
 		const btn = contentEl.createEl("button", { text: "Send" });
 		btn.onclick = () => this.submit(input.value.trim());
 
-		// Also submit on Ctrl/Cmd+Enter
 		input.onkeydown = (e: KeyboardEvent) => {
 			if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-				this.submit(input.value.trim());
+				void this.submit(input.value.trim());
 			}
 		};
 	}
@@ -36,7 +35,7 @@ export class AskModal extends Modal {
 		if (!question) return;
 
 		if (!this.settings.apiKey) {
-			new Notice("KB Bot: add your API key in Settings → KB Bot.");
+			new Notice("Add your API key in the plugin settings.");
 			this.close();
 			return;
 		}
@@ -44,7 +43,7 @@ export class AskModal extends Modal {
 		const selectedText = this.editor.getSelection();
 		const prompt = buildPrompt(question, selectedText);
 
-		new Notice("KB Bot is thinking…");
+		new Notice("Thinking…");
 		this.close();
 
 		try {

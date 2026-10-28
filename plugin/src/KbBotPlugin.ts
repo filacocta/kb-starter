@@ -11,19 +11,19 @@ export default class KbBotPlugin extends Plugin {
 		await this.loadSettings();
 
 		this.addCommand({
-			id: "ask-kb-bot",
-			name: "Ask KB Bot",
+			id: "ask",
+			name: "Ask",
 			editorCallback: (editor: Editor, _ctx: MarkdownView | MarkdownFileInfo) => {
 				new AskModal(this.app, editor, this.settings).open();
 			},
 		});
 
-		this.addRibbonIcon("bot", "Ask KB Bot", () => {
+		this.addRibbonIcon("bot", "Ask a question", () => {
 			const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 			if (view) {
 				new AskModal(this.app, view.editor, this.settings).open();
 			} else {
-				new Notice("KB Bot: open a note first.");
+				new Notice("Open a note first.");
 			}
 		});
 
@@ -33,7 +33,12 @@ export default class KbBotPlugin extends Plugin {
 	onunload(): void {}
 
 	async loadSettings(): Promise<void> {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		this.settings = { ...DEFAULT_SETTINGS };
+		const saved: unknown = await this.loadData();
+		if (typeof saved !== "object" || saved === null) return;
+		if ("apiKey" in saved && typeof saved.apiKey === "string") this.settings.apiKey = saved.apiKey;
+		if ("model" in saved && typeof saved.model === "string") this.settings.model = saved.model;
+		if ("maxTokens" in saved && typeof saved.maxTokens === "number" && Number.isInteger(saved.maxTokens) && saved.maxTokens > 0) this.settings.maxTokens = saved.maxTokens;
 	}
 
 	async saveSettings(): Promise<void> {

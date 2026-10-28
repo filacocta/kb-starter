@@ -55,7 +55,7 @@ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B -m pytest -p no:cacheprovider \
 git diff --check
 ```
 
-In `plugin/`, `npm test` and `npm run build` verify the optional adapter without
+In `plugin/`, `npm run lint -- --max-warnings 0`, `npm test`, and `npm run build` verify the optional adapter without
 calling a provider. No test requires a live vault, service or account. Use
 synthetic/public-safe fixtures. Structural checks cannot verify source truth,
 choose canonical ownership or certify a deployment. Record real test output and

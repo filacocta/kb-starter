@@ -20,6 +20,7 @@ export function isKbBotFile(content: string): boolean {
 /** Returns true if the path is within the KB sandbox. */
 export function isInsideKb(path: string): boolean {
 	const normalised = path.replace(/\\/g, "/").replace(/^\//, "");
+	if (normalised.split("/").some(part => part === "." || part === "..")) return false;
 	return normalised === KB_ROOT || normalised.startsWith(KB_ROOT + "/");
 }
 
@@ -37,7 +38,6 @@ export async function assertWritable(app: App, path: string): Promise<string | n
 
 	const file = app.vault.getAbstractFileByPath(path);
 	if (!file) {
-		// File doesn't exist yet — safe to create
 		return null;
 	}
 
@@ -65,7 +65,10 @@ export async function safeWrite(app: App, path: string, content: string): Promis
 	if (existing === null) {
 		await app.vault.create(path, content);
 	} else {
-		const file = app.vault.getAbstractFileByPath(path) as TFile;
+		const file = app.vault.getAbstractFileByPath(path);
+		if (!(file instanceof TFile)) {
+			throw new Error(`KB Bot authorship guard: "${path}" is no longer a file. Write aborted.`);
+		}
 		await app.vault.modify(file, content);
 	}
 }
